@@ -1,3 +1,14 @@
+import sys
+import os
+
+# ==========================================
+# 👇 核心修复代码：强行把当前目录加入系统路径
+# ==========================================
+# 1. 获取 data_process.py 所在的文件夹路径 (即 model 文件夹)
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# 2. 把这个路径告诉 Python
+sys.path.append(current_dir)
+
 import torch
 import jieba
 from collections import Counter
