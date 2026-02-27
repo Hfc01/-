@@ -1,3 +1,4 @@
+---
 ````markdown
 # 🛒 基于深度学习的电商评论情感分析系统 (Pro版)
 
@@ -28,6 +29,7 @@
 ```bash
 pip install torch pandas jieba streamlit plotly matplotlib wordcloud
 ```
+
 ````
 
 ---
@@ -77,3 +79,4 @@ streamlit run model/web_demo.py
 
 1. **路径规范**：请务必确保执行启动命令时，终端的工作路径处于项目的**根目录**（例如 `D:\毕设\-`），而非 `model` 子目录内，以免触发相对路径索引错误。
 2. **冷启动说明**：若启动 Web 界面后系统提示未检测到模型，表明根目录下缺失 `sentiment_model.pth`。系统会开启无模型的“演示模式”（部分结果通过模拟生成），建议优先运行 `run_model.py` 以获得真实的神经网络推断体验。
+````
