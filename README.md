@@ -1,4 +1,3 @@
----
 ````markdown
 # 🛒 基于深度学习的电商评论情感分析系统 (Pro版)
 
@@ -12,10 +11,8 @@
 
 - **`model/run_model.py`**：核心训练脚本。
   - 负责读取原始数据、文本预处理、构建 LSTM 神经网络、执行训练，并最终保存模型权重参数 (`sentiment_model.pth`)。
-
 - **`model/web_demo.py`**：可视化业务展现系统（主程序）。
   - 基于 Streamlit 构建的企业级交互应用。集成了用户鉴权、全局监控大屏、单文本诊断、批量挖掘与系统配置等核心模块。
-
 - **`data/`**：存放原始数据集文件（如 `ChnSentiCorp_htl_all.csv`）。
 - **`sentiment_model.pth`**：训练完成的模型权重文件（由训练脚本生成，Web 端依赖此文件进行推断）。
 - **`users.db`**：本地轻量级 SQLite 数据库（由 Web 系统自动生成，用于存储管理员账号与加密密码）。
@@ -29,7 +26,6 @@
 ```bash
 pip install torch pandas jieba streamlit plotly matplotlib wordcloud
 ```
-
 ````
 
 ---
@@ -42,7 +38,6 @@ pip install torch pandas jieba streamlit plotly matplotlib wordcloud
 
 ```bash
 python model/run_model.py
-
 ```
 
 > **提示**：控制台将实时输出训练过程中的 Epoch、Loss 和 Accuracy 变化。
@@ -53,7 +48,6 @@ python model/run_model.py
 
 ```bash
 streamlit run model/web_demo.py
-
 ```
 
 **系统启动后将在浏览器自动呈现，核心功能矩阵如下：**
@@ -79,4 +73,7 @@ streamlit run model/web_demo.py
 
 1. **路径规范**：请务必确保执行启动命令时，终端的工作路径处于项目的**根目录**（例如 `D:\毕设\-`），而非 `model` 子目录内，以免触发相对路径索引错误。
 2. **冷启动说明**：若启动 Web 界面后系统提示未检测到模型，表明根目录下缺失 `sentiment_model.pth`。系统会开启无模型的“演示模式”（部分结果通过模拟生成），建议优先运行 `run_model.py` 以获得真实的神经网络推断体验。
-````
+
+```
+
+```
