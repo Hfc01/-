@@ -4,171 +4,182 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import jieba
+import time
+import random
+import numpy as np
 from collections import Counter
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
-import time
 
 # ==========================================
-# 🛠️ 配置参数 (你可以修改这里)
+# 实验配置 (Experiment Configuration)
 # ==========================================
-MAX_LEN = 50          # 句子的最大长度
-BATCH_SIZE = 64       # 每次喂给模型多少条数据
-EMBEDDING_DIM = 100   # 每个词用多少维的向量表示
-HIDDEN_DIM = 128      # 神经网络隐藏层神经元数量
-EPOCHS = 10           # 训练多少轮 (建议 5-10 轮)
-LEARNING_RATE = 0.001 # 学习率
-
-# ==========================================
-# 1. 数据读取与处理 (保持不变)
-# ==========================================
-def load_and_process_data():
-    # --- 定位文件 ---
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    data_path = os.path.join(current_dir, '..', 'data', 'ChnSentiCorp_htl_all.csv')
+class Config:
+    """集中管理超参数，方便实验调整"""
+    SEED = 42                # 随机种子，保证结果可复现
+    MAX_LEN = 50             # 文本截断/填充长度
+    BATCH_SIZE = 64          # 批大小
+    EMBED_DIM = 100          # 词向量维度
+    HIDDEN_DIM = 128         # LSTM 隐藏层维度
+    EPOCHS = 10              # 训练轮次
+    LR = 0.001               # 学习率
+    VOCAB_SIZE = 5000        # 词表容量
+    DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
-    print(f"📂 正在读取数据：{data_path}")
-    if not os.path.exists(data_path):
-        print("❌ 错误：找不到数据文件！")
-        return None, None, None
+    # 文件路径配置
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    DATA_PATH = os.path.join(BASE_DIR, '..', 'data', 'ChnSentiCorp_htl_all.csv')
+    SAVE_PATH = 'sentiment_model.pth'
 
-    # --- 读取清洗 ---
-    df = pd.read_csv(data_path).dropna(subset=['review'])
+def seed_everything(seed):
+    """锁定所有随机种子，确保毕设实验的可重复性"""
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+
+# ==========================================
+# 数据处理流水线 (Data Pipeline)
+# ==========================================
+def load_and_vectorize():
+    """读取数据并转换为 Tensor"""
+    print(f"[Info] Loading data from {Config.DATA_PATH}...")
+    
+    if not os.path.exists(Config.DATA_PATH):
+        raise FileNotFoundError("数据文件未找到，请检查路径设置！")
+
+    # 读取 CSV，处理可能的空值
+    try:
+        df = pd.read_csv(Config.DATA_PATH).dropna(subset=['review'])
+    except UnicodeDecodeError:
+        df = pd.read_csv(Config.DATA_PATH, encoding='gbk').dropna(subset=['review'])
+        
     texts = df['review'].astype(str).tolist()
     labels = df['label'].tolist()
-    print(f"✅ 读取成功！共 {len(texts)} 条数据")
-
-    # --- 构建词典 ---
-    print("🔨 正在构建词典 (只保留最常见的5000词)...")
-    all_words = []
-    for text in texts:
-        all_words.extend(jieba.lcut(text))
     
+    # 1. 构建词表 (Tokenization & Vocab Building)
+    print("[Info] Building vocabulary...")
+    all_tokens = []
+    for t in texts:
+        all_tokens.extend(jieba.lcut(t))
+    
+    # 保留高频词，其余设为 UNK
     vocab = {"<PAD>": 0, "<UNK>": 1}
-    for word, _ in Counter(all_words).most_common(5000):
+    for word, _ in Counter(all_tokens).most_common(Config.VOCAB_SIZE):
         vocab[word] = len(vocab)
-    
-    # --- 数字化 ---
-    print("🔢 正在将文本转为数字...")
+        
+    # 2. 序列数字化 (Vectorization)
+    print("[Info] Converting text to sequences...")
     input_ids = []
-    for text in texts:
-        words = jieba.lcut(text)
+    for t in texts:
+        words = jieba.lcut(t)
         ids = [vocab.get(w, 1) for w in words]
-        # 填充或截断
-        if len(ids) > MAX_LEN:
-            ids = ids[:MAX_LEN]
+        
+        # Padding / Truncating
+        if len(ids) > Config.MAX_LEN:
+            ids = ids[:Config.MAX_LEN]
         else:
-            ids = ids + [0] * (MAX_LEN - len(ids))
+            ids += [0] * (Config.MAX_LEN - len(ids))
         input_ids.append(ids)
-    
-    # --- 转为 Tensor ---
+        
+    # 转换为 PyTorch Tensor
     X = torch.tensor(input_ids, dtype=torch.long)
     y = torch.tensor(labels, dtype=torch.long)
     
     return X, y, len(vocab)
 
 # ==========================================
-# 🧠 2. 定义神经网络模型 (LSTM)
+# 模型架构 (Model Architecture)
 # ==========================================
-class SentimentLSTM(nn.Module):
+class TextClassificationModel(nn.Module):
+    """
+    标准的 Embedding + LSTM + FC 结构。
+    适用于短文本情感分类任务。
+    """
     def __init__(self, vocab_size, embed_dim, hidden_dim, output_dim=2):
-        super(SentimentLSTM, self).__init__()
-        # 1. 嵌入层：把数字变成向量
+        super(TextClassificationModel, self).__init__()
         self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=0)
-        # 2. LSTM层：提取语义特征
+        # batch_first=True 使得输入维度为 (batch, seq, feature)
         self.lstm = nn.LSTM(embed_dim, hidden_dim, batch_first=True)
-        # 3. 全连接层：分类 (好评/差评)
         self.fc = nn.Linear(hidden_dim, output_dim)
         
-    def forward(self, text):
-        # text形状: [batch_size, max_len]
-        embedded = self.embedding(text) 
-        # embedded形状: [batch_size, max_len, embed_dim]
-        
-        # LSTM 输出
+    def forward(self, x):
+        embedded = self.embedding(x) 
         output, (hidden, cell) = self.lstm(embedded)
-        # 我们只取最后一步的隐藏状态作为句子的代表
-        final_hidden = hidden[-1] 
-        
-        # 分类
-        return self.fc(final_hidden)
+        # 取最后一个时间步的输出作为句子的特征表示
+        return self.fc(hidden[-1])
 
 # ==========================================
-#  3. 训练与评估函数
+# 训练主流程 (Main Loop)
 # ==========================================
-def train_model():
-    # 1. 准备数据
-    X, y, vocab_size = load_and_process_data()
-    if X is None: return
-
-    # 拆分训练集和测试集 (80% 训练, 20% 测试)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+def run_training():
+    seed_everything(Config.SEED)
     
-    # 包装成 DataLoader (方便批量训练)
-    train_data = TensorDataset(X_train, y_train)
-    test_data = TensorDataset(X_test, y_test)
-    train_loader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True)
-    test_loader = DataLoader(test_data, batch_size=BATCH_SIZE)
+    # 1. 准备数据
+    X, y, vocab_size = load_and_vectorize()
+    # 划分训练集和验证集 (8:2)
+    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=Config.SEED)
+    
+    train_ds = TensorDataset(X_train, y_train)
+    val_ds = TensorDataset(X_val, y_val)
+    train_loader = DataLoader(train_ds, batch_size=Config.BATCH_SIZE, shuffle=True)
+    val_loader = DataLoader(val_ds, batch_size=Config.BATCH_SIZE)
     
     # 2. 初始化模型
-    print(f"\n🧠 初始化模型 (词表大小: {vocab_size})...")
-    model = SentimentLSTM(vocab_size, EMBEDDING_DIM, HIDDEN_DIM)
+    print(f"[Info] Initializing model on {Config.DEVICE}...")
+    model = TextClassificationModel(vocab_size, Config.EMBED_DIM, Config.HIDDEN_DIM).to(Config.DEVICE)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=Config.LR)
     
-    # 3. 定义损失函数和优化器
-    criterion = nn.CrossEntropyLoss() # 分类任务标准损失
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    # 3. 循环训练
+    print(f"[Info] Start training for {Config.EPOCHS} epochs...")
+    best_acc = 0.0
     
-    # 4. 开始训练循环
-    print("🚀 开始训练... (请耐心等待，每轮大概几秒钟)")
-    print("-" * 50)
-    
-    for epoch in range(EPOCHS):
+    for epoch in range(Config.EPOCHS):
         start_time = time.time()
-        model.train() # 开启训练模式
+        model.train()
         total_loss = 0
-        correct = 0
-        total = 0
         
-        for texts, labels in train_loader:
-            optimizer.zero_grad()           # 清空梯度
-            predictions = model(texts)      # 前向传播 (预测)
-            loss = criterion(predictions, labels) # 计算误差
-            loss.backward()                 # 反向传播 (求导)
-            optimizer.step()                # 更新参数
+        for batch_x, batch_y in train_loader:
+            batch_x, batch_y = batch_x.to(Config.DEVICE), batch_y.to(Config.DEVICE)
+            
+            optimizer.zero_grad()
+            outputs = model(batch_x)
+            loss = criterion(outputs, batch_y)
+            loss.backward()
+            optimizer.step()
             
             total_loss += loss.item()
-            # 计算准确率
-            _, predicted = torch.max(predictions, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
             
-        train_acc = 100 * correct / total
-        
-        # --- 每轮结束后测试一下 ---
-        model.eval() # 开启评估模式
-        test_correct = 0
-        test_total = 0
+        # 验证集评估
+        model.eval()
+        correct = 0
+        total = 0
         with torch.no_grad():
-            for texts, labels in test_loader:
-                outputs = model(texts)
-                _, predicted = torch.max(outputs, 1)
-                test_total += labels.size(0)
-                test_correct += (predicted == labels).sum().item()
+            for val_x, val_y in val_loader:
+                val_x, val_y = val_x.to(Config.DEVICE), val_y.to(Config.DEVICE)
+                outputs = model(val_x)
+                _, predicted = torch.max(outputs.data, 1)
+                total += val_y.size(0)
+                correct += (predicted == val_y).sum().item()
         
-        test_acc = 100 * test_correct / test_total
+        acc = 100 * correct / total
+        time_elapsed = time.time() - start_time
         
-        print(f"Epoch [{epoch+1}/{EPOCHS}] | "
-              f"耗时: {time.time()-start_time:.1f}s | "
+        print(f"Epoch [{epoch+1}/{Config.EPOCHS}] | "
+              f"Time: {time_elapsed:.1f}s | "
               f"Loss: {total_loss/len(train_loader):.4f} | "
-              f"训练准确率: {train_acc:.2f}% | "
-              f"测试准确率: {test_acc:.2f}%")
-
-    print("-" * 50)
-    print("🎉 训练结束！模型已经学会了区分好评和差评！")
-    
-    # 保存模型 (毕设需要)
-    torch.save(model.state_dict(), 'sentiment_model.pth')
-    print("💾 模型参数已保存为 sentiment_model.pth")
+              f"Val Acc: {acc:.2f}%")
+        
+        # 保存最佳模型
+        if acc > best_acc:
+            best_acc = acc
+            torch.save(model.state_dict(), Config.SAVE_PATH)
+            
+    print(f"[Done] Training finished. Best Accuracy: {best_acc:.2f}%")
+    print(f"[Info] Model saved to {Config.SAVE_PATH}")
 
 if __name__ == "__main__":
-    train_model()
+    run_training()
