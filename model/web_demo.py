@@ -315,15 +315,21 @@ def main():
                     uploaded_file.seek(0)
                     df = pd.read_csv(uploaded_file, encoding='gbk')
         else:
+            # ✨ 修复核心：将加载的数据存入 session_state
             if st.button("一键加载测试样本"):
                 if default_data_path and os.path.exists(default_data_path):
-                    df = pd.read_csv(default_data_path).sample(500)
+                    st.session_state['temp_demo_df'] = pd.read_csv(default_data_path).sample(500)
                 else:
-                    st.error("未找到演示数据集。")
-                    
+                    st.error(f"未找到演示数据集。请检查路径: {default_data_path}")
+            
+            # ✨ 修复核心：无论按钮是否被再次点击，只要选择了演示数据源，就从缓存读取
+            if 'temp_demo_df' in st.session_state and data_source == "🎁 加载系统演示数据集":
+                df = st.session_state['temp_demo_df']
+                
         if df is not None:
             # 自动识别文本列
             cols = df.columns.tolist()
+            # ... （保留下方原有的分析代码即可）...
             keywords = ['review', '评论', 'content', 'text', '内容']
             text_col = cols[0] 
             for col in cols:
