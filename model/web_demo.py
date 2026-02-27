@@ -10,6 +10,41 @@ from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 import plotly.express as px
 import plotly.graph_objects as go
+import sqlite3
+import hashlib
+
+# ==========================================
+# 0. 用户认证与数据库模块
+# ==========================================
+def make_hashes(password):
+    return hashlib.sha256(str.encode(password)).hexdigest()
+
+def check_hashes(password, hashed_text):
+    if make_hashes(password) == hashed_text:
+        return True
+    return False
+
+def create_usertable():
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute('CREATE TABLE IF NOT EXISTS userstable(username TEXT, password TEXT)')
+    conn.commit()
+    conn.close()
+
+def add_userdata(username, password):
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute('INSERT INTO userstable(username, password) VALUES (?,?)', (username, password))
+    conn.commit()
+    conn.close()
+
+def login_user(username, password):
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute('SELECT * FROM userstable WHERE username =? AND password = ?', (username, password))
+    data = c.fetchall()
+    conn.close()
+    return data
 
 # ==========================================
 # 1. 配置与模型定义
@@ -38,7 +73,6 @@ def load_resources():
     model_path = os.path.join(current_dir, 'sentiment_model.pth')
 
     if not os.path.exists(model_path): 
-        # 为了演示系统容错性，若无模型则返回空模型占位符
         return None, {"<PAD>": 0, "<UNK>": 1}, data_path, "未检测到模型文件，系统将以演示模式运行。"
     
     try:
@@ -74,7 +108,6 @@ def load_resources():
 # 2. 核心分析与可视化工具函数
 # ==========================================
 def analyze_aspect(text):
-    """提取评论中涉及的多个维度，返回列表"""
     aspects = {
         "卫生与设施": ["脏", "乱", "臭", "味道", "旧", "破", "坏", "干净", "整洁", "马桶", "床", "设施", "硬件"],
         "服务体验": ["服务", "前台", "态度", "热情", "冷淡", "效率", "慢", "保洁", "保安"],
@@ -86,11 +119,9 @@ def analyze_aspect(text):
     return detected if detected else ["其他/未提及"]
 
 def generate_wordcloud(text_list, custom_stop_words=""):
-    """生成词云图并返回 matplotlib figure"""
     if not text_list: return None
     base_stop_words = {"的", "是", "了", "在", "我", "我们", "你", "有", "和", "就", "不", "人", "都", "一个", "上", "也", "很", "到", "说", "去", "会", "着", "没有", "但是", "因为", "还是", "这", "那", "个", "住", "对", "让", "给", "把", "被", "跟", "与", "为", "等", "感觉", "觉得"}
     
-    # 融合自定义停用词
     if custom_stop_words:
         base_stop_words.update(set(custom_stop_words.replace("，", ",").split(",")))
     
@@ -112,9 +143,7 @@ def generate_wordcloud(text_list, custom_stop_words=""):
     return fig
 
 def predict_sentiment(texts, model, vocab):
-    """批量预测核心逻辑"""
     if not model:
-        # 兜底逻辑：无模型时随机生成结果供前端大屏展示测试
         return ["好评" if np.random.rand() > 0.4 else "差评" for _ in texts]
     
     input_ids = []
@@ -133,13 +162,11 @@ def predict_sentiment(texts, model, vocab):
     return ["好评" if p == 1 else "差评" for p in preds]
 
 # ==========================================
-# 3. 页面渲染模块 (大屏可视化)
+# 3. 页面渲染模块
 # ==========================================
 def render_dashboard(df):
-    """渲染数据可视化大屏"""
     st.markdown("### 📈 舆情数据监控大屏")
     
-    # --- 核心指标区 ---
     total = len(df)
     pos_count = len(df[df['预测结果'] == '好评'])
     neg_count = len(df[df['预测结果'] == '差评'])
@@ -157,11 +184,8 @@ def render_dashboard(df):
     
     st.markdown("---")
     
-    # --- 图表区 ---
     c1, c2 = st.columns([1, 1])
-    
     with c1:
-        # 1. 情感分布环形图
         fig_pie = px.pie(
             names=['好评', '差评'], 
             values=[pos_count, neg_count], 
@@ -173,8 +197,6 @@ def render_dashboard(df):
         st.plotly_chart(fig_pie, use_container_width=True)
 
     with c2:
-        # 2. 评论维度关注度柱状图
-        # 将列表展开统计
         all_aspects = [aspect for sublist in df['维度列表'] for aspect in sublist]
         aspect_counts = pd.Series(all_aspects).value_counts().reset_index()
         aspect_counts.columns = ['维度', '提及频次']
@@ -191,9 +213,7 @@ def render_dashboard(df):
         fig_bar.update_layout(yaxis={'categoryorder':'total ascending'})
         st.plotly_chart(fig_bar, use_container_width=True)
 
-    # 3. 维度与情感的交叉分析 (堆叠柱状图)
     st.markdown("#### 🎯 核心维度情感交叉分析")
-    # 构建交叉表
     aspect_sentiment_data = []
     for _, row in df.iterrows():
         for aspect in row['维度列表']:
@@ -202,8 +222,6 @@ def render_dashboard(df):
     cross_df = pd.DataFrame(aspect_sentiment_data)
     if not cross_df.empty:
         cross_table = pd.crosstab(cross_df['维度'], cross_df['情感']).reset_index()
-        
-        # 确保列存在
         for col in ['好评', '差评']:
             if col not in cross_table.columns: cross_table[col] = 0
             
@@ -214,21 +232,51 @@ def render_dashboard(df):
         fig_stack.update_layout(barmode='stack', title="各维度情感倾向构成比", xaxis_title="评价维度", yaxis_title="评论数量")
         st.plotly_chart(fig_stack, use_container_width=True)
 
+# ==========================================
+# 4. 登录页面与主程序入口
+# ==========================================
+def login_page():
+    # 为了让登录页面更简洁，居中显示
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.title("🔐 系统登录")
+        st.markdown("欢迎访问电商评论智能分析平台。")
+        
+        create_usertable()
+        
+        tab1, tab2 = st.tabs(["🔑 身份验证", "📝 注册账号"])
+        
+        with tab1:
+            username = st.text_input("用户名", key="login_user")
+            password = st.text_input("密码", type='password', key="login_pass")
+            if st.button("登录系统", type="primary", use_container_width=True):
+                hashed_pswd = make_hashes(password)
+                result = login_user(username, hashed_pswd)
+                if result:
+                    st.session_state['logged_in'] = True
+                    st.session_state['current_user'] = username
+                    st.success("验证成功，正在进入系统...")
+                    st.rerun()
+                else:
+                    st.error("验证失败：用户名或密码错误。")
 
-# ==========================================
-# 4. 主程序入口与路由
-# ==========================================
+        with tab2:
+            new_user = st.text_input("设定用户名", key="reg_user")
+            new_password = st.text_input("设定密码", type='password', key="reg_pass")
+            if st.button("注册新用户", use_container_width=True):
+                if new_user and new_password:
+                    add_userdata(new_user, make_hashes(new_password))
+                    st.success("账号注册成功，请切换至登录标签进行操作。")
+                else:
+                    st.warning("注册失败：需填写完整信息。")
+
 def main():
-    st.set_page_config(page_title="智能文本挖掘与情感分析系统", page_icon="🏢", layout="wide", initial_sidebar_state="expanded")
-    
-    # 初始化状态
     if 'global_stop_words' not in st.session_state:
         st.session_state['global_stop_words'] = "酒店,宾馆,入住"
 
     with st.spinner('系统内核初始化中...'):
         model, vocab, default_data_path, status = load_resources()
         
-    # 侧边栏导航
     st.sidebar.title("🏢 文本挖掘系统")
     st.sidebar.markdown("---")
     app_mode = st.sidebar.radio("系统功能导航", [
@@ -239,21 +287,17 @@ def main():
     ])
     
     st.sidebar.markdown("---")
-    st.sidebar.caption("Model Status: " + ("✅ Online" if model else "⚠️ Not Found/Demo Mode"))
-
-    # === 功能路由 ===
+    st.sidebar.caption("Model Status: " + ("✅ Online" if model else "⚠️ Demo Mode"))
+    st.sidebar.write(f"操作员: **{st.session_state.get('current_user', 'Admin')}**")
+    if st.sidebar.button("🚪 安全退出"):
+        st.session_state['logged_in'] = False
+        st.rerun()
 
     if app_mode == "⚙️ 系统设置 (Settings)":
         st.title("⚙️ 系统参数配置")
-        st.markdown("在此配置数据处理及模型推断的相关参数。")
-        
         with st.form("config_form"):
             st.subheader("文本预处理配置")
             stop_words_input = st.text_area("自定义停用词 (以英文逗号分隔):", value=st.session_state['global_stop_words'])
-            
-            st.subheader("模型推断参数")
-            conf_threshold = st.slider("判定置信度阈值 (低于此值标记为'疑似'):", 0.5, 0.99, 0.8)
-            
             submitted = st.form_submit_button("保存系统配置")
             if submitted:
                 st.session_state['global_stop_words'] = stop_words_input
@@ -261,17 +305,13 @@ def main():
 
     elif app_mode == "📝 单条诊断 (Single Test)":
         st.title("📝 单文本情感诊断")
-        st.markdown("输入单条客户评论，系统将实时输出情感极性、置信度及提取的核心业务维度。")
-        
         with st.form("single_analysis_form"):
-            user_input = st.text_area("📄 待测文本输入区:", height=150, placeholder="请输入一段涉及产品或服务的评论文本...")
+            user_input = st.text_area("📄 待测文本输入区:", height=150)
             submit_btn = st.form_submit_button("运行分析预测")
             
         if submit_btn and user_input.strip():
             with st.spinner("神经网络推断中..."):
                 aspects = analyze_aspect(user_input)
-                
-                # 模型推断逻辑
                 if model:
                     words = jieba.lcut(user_input)
                     ids = [vocab.get(w, 1) for w in words]
@@ -283,118 +323,98 @@ def main():
                         conf = prob[0][pred_class].item()
                     res_label = "好评" if pred_class == 1 else "差评"
                 else:
-                    # 兜底演示
                     res_label = "好评" if "好" in user_input else "差评"
                     conf = 0.95
                 
             st.markdown("### 诊断报告")
             col_res1, col_res2, col_res3 = st.columns(3)
             with col_res1:
-                if res_label == "好评":
-                    st.success(f"**判定极性：正向 (Positive)**")
-                else:
-                    st.error(f"**判定极性：负向 (Negative)**")
-            with col_res2:
-                st.info(f"**模型置信度：{conf:.2%}**")
-            with col_res3:
-                st.warning(f"**涉及维度：{', '.join(aspects)}**")
+                if res_label == "好评": st.success(f"**判定极性：正向**")
+                else: st.error(f"**判定极性：负向**")
+            with col_res2: st.info(f"**模型置信度：{conf:.2%}**")
+            with col_res3: st.warning(f"**涉及维度：{', '.join(aspects)}**")
 
     elif app_mode == "📂 批量挖掘 (Batch Mining)":
         st.title("📂 数据批量导入与挖掘")
-        st.markdown("支持导入 CSV 文件，执行大规模数据的情感计算与维度打标。")
-        
         data_source = st.radio("选择数据源方式:", ["📂 本地上传文件", "🎁 加载系统演示数据集"], horizontal=True)
         
         df = None
         if data_source == "📂 本地上传文件":
             uploaded_file = st.file_uploader("请选择 CSV 格式数据文件", type=["csv"])
             if uploaded_file:
-                try:
-                    df = pd.read_csv(uploaded_file)
+                try: df = pd.read_csv(uploaded_file)
                 except UnicodeDecodeError:
                     uploaded_file.seek(0)
                     df = pd.read_csv(uploaded_file, encoding='gbk')
         else:
-            # ✨ 修复核心：将加载的数据存入 session_state
             if st.button("一键加载测试样本"):
                 if default_data_path and os.path.exists(default_data_path):
                     st.session_state['temp_demo_df'] = pd.read_csv(default_data_path).sample(500)
                 else:
-                    st.error(f"未找到演示数据集。请检查路径: {default_data_path}")
-            
-            # ✨ 修复核心：无论按钮是否被再次点击，只要选择了演示数据源，就从缓存读取
+                    st.error("未找到演示数据集。")
             if 'temp_demo_df' in st.session_state and data_source == "🎁 加载系统演示数据集":
                 df = st.session_state['temp_demo_df']
                 
         if df is not None:
-            # 自动识别文本列
             cols = df.columns.tolist()
-            # ... （保留下方原有的分析代码即可）...
             keywords = ['review', '评论', 'content', 'text', '内容']
             text_col = cols[0] 
             for col in cols:
                 if any(k in col.lower() for k in keywords):
-                    text_col = col
-                    break
+                    text_col = col; break
             
-            st.info(f"💡 系统已自动将字段 `[{text_col}]` 识别为分析对象。")
-            st.dataframe(df.head(5), use_container_width=True)
+            st.info(f"💡 识别分析对象列：`[{text_col}]`")
             
             if st.button("🚀 启动全量深度分析", type="primary"):
                 progress_bar = st.progress(0)
-                with st.spinner("执行自然语言处理流水线..."):
+                with st.spinner("执行分析中..."):
                     texts = df[text_col].astype(str).tolist()
-                    
-                    # 批量预测
                     df['预测结果'] = predict_sentiment(texts, model, vocab)
                     progress_bar.progress(50)
-                    
-                    # 维度打标
                     df['维度列表'] = df[text_col].apply(analyze_aspect)
                     df['涉及维度'] = df['维度列表'].apply(lambda x: ", ".join(x))
                     progress_bar.progress(100)
-                    
                     st.session_state['master_df'] = df
                     st.session_state['text_col'] = text_col
-                    st.success("批量分析任务完成！请前往「监控大屏」查看可视化结果，或在此处下载原始数据。")
+                    st.success("分析完成！请前往「监控大屏」查看。")
             
         if 'master_df' in st.session_state:
-            st.markdown("### 数据导出与检索")
+            st.markdown("### 数据导出")
             res_df = st.session_state['master_df']
-            
-            search_term = st.text_input("在结果中全局检索关键字:")
-            if search_term:
-                mask = res_df.astype(str).apply(lambda x: x.str.contains(search_term, case=False)).any(axis=1)
-                display_df = res_df[mask]
-            else:
-                display_df = res_df
-                
-            st.dataframe(display_df.drop(columns=['维度列表'], errors='ignore'), height=300)
-            
-            csv_data = display_df.drop(columns=['维度列表'], errors='ignore').to_csv(index=False).encode('utf-8-sig')
-            st.download_button("📥 导出分析结果包 (CSV)", csv_data, 'system_analysis_output.csv', 'text/csv')
+            csv_data = res_df.drop(columns=['维度列表'], errors='ignore').to_csv(index=False).encode('utf-8-sig')
+            st.download_button("📥 导出分析结果 (CSV)", csv_data, 'output.csv', 'text/csv')
 
     elif app_mode == "📊 监控大屏 (Dashboard)":
         st.title("📊 全局数据监控与可视化")
-        
         if 'master_df' not in st.session_state:
-            st.warning("当前系统暂无处理完成的数据。请先进入「📂 批量挖掘」模块处理数据。")
+            st.warning("暂无数据。请先执行批量挖掘任务。")
         else:
             df = st.session_state['master_df']
             render_dashboard(df)
             
-            st.markdown("### ☁️ 高频词云特征提取")
+            st.markdown("### ☁️ 高频词云提取")
             c1, c2 = st.columns(2)
             with c1:
-                st.markdown("**正向情感词云 (Positive)**")
+                st.markdown("**正向特征**")
                 pos_texts = df[df['预测结果'] == '好评'][st.session_state.get('text_col', 'review')].tolist()
                 fig_pos = generate_wordcloud(pos_texts, st.session_state['global_stop_words'])
                 if fig_pos: st.pyplot(fig_pos)
             with c2:
-                st.markdown("**负向情感词云 (Negative)**")
+                st.markdown("**负向特征**")
                 neg_texts = df[df['预测结果'] == '差评'][st.session_state.get('text_col', 'review')].tolist()
                 fig_neg = generate_wordcloud(neg_texts, st.session_state['global_stop_words'])
                 if fig_neg: st.pyplot(fig_neg)
 
 if __name__ == "__main__":
-    main()
+    # 确保此为程序的首个 Streamlit 指令
+    st.set_page_config(page_title="电商评论情感分析系统", page_icon="🛍️", layout="wide", initial_sidebar_state="expanded")
+    
+    if 'logged_in' not in st.session_state:
+        st.session_state['logged_in'] = False
+
+    if not st.session_state['logged_in']:
+        # 隐藏左侧边栏，营造纯粹的登录界面
+        st.markdown("<style>[data-testid='collapsedControl'] {display: none;}</style>", unsafe_allow_html=True)
+        login_page()
+    else:
+        main()
