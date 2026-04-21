@@ -1,4 +1,4 @@
-# 🛒 基于深度学习的电商评论情感分析系统 (Pro 增强版)
+# 🛒 基于深度学习的电商评论情感分析系统
 
 > **Graduation Project: E-commerce Review Sentiment Analysis System based on Deep Learning**
 
