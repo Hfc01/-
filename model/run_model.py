@@ -43,18 +43,23 @@ def seed_everything(seed):
 # ==========================================
 # 数据处理流水线 (Data Pipeline)
 # ==========================================
-def load_and_vectorize():
+def load_and_vectorize(df=None):
     """读取数据并转换为 Tensor"""
-    print(f"[Info] Loading data from {Config.DATA_PATH}...")
-    
-    if not os.path.exists(Config.DATA_PATH):
-        raise FileNotFoundError("数据文件未找到，请检查路径设置！")
+    if df is None:
+        print(f"[Info] Loading data from {Config.DATA_PATH}...")
+        
+        if not os.path.exists(Config.DATA_PATH):
+            raise FileNotFoundError("数据文件未找到，请检查路径设置！")
 
-    # 读取 CSV，处理可能的空值
-    try:
-        df = pd.read_csv(Config.DATA_PATH).dropna(subset=['review'])
-    except UnicodeDecodeError:
-        df = pd.read_csv(Config.DATA_PATH, encoding='gbk').dropna(subset=['review'])
+        # 读取 CSV，处理可能的空值
+        try:
+            df = pd.read_csv(Config.DATA_PATH).dropna(subset=['review'])
+        except UnicodeDecodeError:
+            df = pd.read_csv(Config.DATA_PATH, encoding='gbk').dropna(subset=['review'])
+            
+    else:
+        print("[Info] Using user-uploaded dataset...")
+        df = df.dropna(subset=['review'])
         
     texts = df['review'].astype(str).tolist()
     labels = df['label'].tolist()
@@ -114,11 +119,11 @@ class TextClassificationModel(nn.Module):
 # ==========================================
 # 训练主流程 (Main Loop)
 # ==========================================
-def run_training():
+def run_training(df=None):
     seed_everything(Config.SEED)
     
     # 1. 准备数据
-    X, y, vocab_size = load_and_vectorize()
+    X, y, vocab_size = load_and_vectorize(df)
     # 划分训练集和验证集 (8:2)
     X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=Config.SEED)
     
@@ -136,6 +141,13 @@ def run_training():
     # 3. 循环训练
     print(f"[Info] Start training for {Config.EPOCHS} epochs...")
     best_acc = 0.0
+    
+    # 记录训练历史
+    history = {
+        'loss': [],
+        'accuracy': [],
+        'epochs': []
+    }
     
     for epoch in range(Config.EPOCHS):
         start_time = time.time()
@@ -165,12 +177,18 @@ def run_training():
                 total += val_y.size(0)
                 correct += (predicted == val_y).sum().item()
         
+        avg_loss = total_loss / len(train_loader)
         acc = 100 * correct / total
         time_elapsed = time.time() - start_time
         
+        # 记录历史数据
+        history['loss'].append(avg_loss)
+        history['accuracy'].append(acc)
+        history['epochs'].append(epoch + 1)
+        
         print(f"Epoch [{epoch+1}/{Config.EPOCHS}] | "
               f"Time: {time_elapsed:.1f}s | "
-              f"Loss: {total_loss/len(train_loader):.4f} | "
+              f"Loss: {avg_loss:.4f} | "
               f"Val Acc: {acc:.2f}%")
         
         # 保存最佳模型
@@ -180,6 +198,8 @@ def run_training():
             
     print(f"[Done] Training finished. Best Accuracy: {best_acc:.2f}%")
     print(f"[Info] Model saved to {Config.SAVE_PATH}")
+    
+    return history, best_acc
 
 if __name__ == "__main__":
     run_training()

@@ -12,6 +12,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import sqlite3
 import hashlib
+from run_model import run_training
 
 # ==========================================
 # 0. 用户认证与数据库模块
@@ -66,10 +67,10 @@ class SentimentLSTM(nn.Module):
         final_hidden = hidden[-1]
         return self.fc(final_hidden)
 
-def load_resources():
+def load_resources(model_filename='sentiment_model.pth'):
     current_dir = os.path.dirname(os.path.abspath(__file__))
     data_path = os.path.join(current_dir, '..', 'data', 'ChnSentiCorp_htl_all.csv')
-    model_path = os.path.join(current_dir, 'sentiment_model.pth')
+    model_path = os.path.join(current_dir, model_filename)
 
     if not os.path.exists(model_path):
         return None, {"<PAD>": 0, "<UNK>": 1}, data_path, "未检测到模型文件，系统将以演示模式运行。"
@@ -324,23 +325,20 @@ def login_page():
         --apple-white: #ffffff;
     }
 
-    /* Full Page Background */
-    .stApp {
-        background-color: var(--apple-gray);
-    }
-
     /* Hide Streamlit Elements */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
+    [data-testid="stStatusWidget"] {display: none;}
 
-    /* Login Container */
-    .login-container {
-        background: var(--apple-white);
-        border-radius: 18px;
-        padding: 48px 40px;
-        max-width: 400px;
-        margin: 0 auto;
-        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+
+
+    /* Full Page Background */
+    .stApp {
+        background-color: var(--apple-gray);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
     }
 
     /* Title Styling */
@@ -351,6 +349,7 @@ def login_page():
         text-align: center;
         margin-bottom: 8px;
         letter-spacing: -0.5px;
+        line-height: 1.07;
     }
 
     .login-subtitle {
@@ -358,26 +357,23 @@ def login_page():
         color: #86868b;
         text-align: center;
         margin-bottom: 32px;
+        line-height: 1.47;
     }
 
     /* Input Fields */
-    .stTextInput > div > div > input,
-    .stTextArea > div > div > input,
-    .stTextArea > div > div > textarea {
+    .stTextInput > div > div > input {
         background-color: var(--apple-gray);
         border: none;
-        border-radius: 10px;
+        border-radius: 8px;
         padding: 14px 16px;
         font-size: 15px;
         transition: all 0.2s ease;
     }
 
-    .stTextInput > div > div > input:focus,
-    .stTextArea > div > div > input:focus,
-    .stTextArea > div > div > textarea:focus {
+    .stTextInput > div > div > input:focus {
         background-color: var(--apple-white);
         box-shadow: none;
-        outline: none;
+        outline: 2px solid var(--apple-blue);
     }
 
     /* Primary Button */
@@ -385,10 +381,10 @@ def login_page():
         background-color: var(--apple-blue);
         color: var(--apple-white);
         border: none;
-        border-radius: 10px;
-        padding: 14px 24px;
-        font-size: 15px;
-        font-weight: 500;
+        border-radius: 8px;
+        padding: 8px 15px;
+        font-size: 17px;
+        font-weight: 400;
         width: 100%;
         transition: background-color 0.2s ease;
     }
@@ -405,6 +401,10 @@ def login_page():
     }
 
     /* Tabs */
+    .stTabs > div > div {
+        border-bottom: 1px solid #d2d2d7;
+    }
+
     .stTabs > div > div > button {
         font-size: 14px;
         font-weight: 500;
@@ -413,6 +413,7 @@ def login_page():
         border: none;
         padding: 12px 20px;
         border-bottom: 2px solid transparent;
+        margin-right: 20px;
     }
 
     .stTabs > div > div > button[data-testid="stTabActive"]:not([class*="st-"]) {
@@ -420,95 +421,53 @@ def login_page():
         border-bottom-color: var(--apple-blue);
     }
 
-    /* Metrics */
-    [data-testid="stMetric"] {
-        background: var(--apple-white);
-        border: none;
-        border-radius: 12px;
-        padding: 20px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-    }
-
-    [data-testid="stMetricLabel"] {
-        font-size: 12px;
-        font-weight: 500;
-        color: #86868b;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-
-    [data-testid="stMetricValue"] {
-        font-size: 28px;
-        font-weight: 600;
-        color: var(--apple-near-black);
-    }
-
-    /* Cards */
-    .element-container:has([data-testid="stMetric"]) {
-        background: var(--apple-white);
-        border-radius: 12px;
-        padding: 4px;
-    }
-
-    /* Sidebar */
-    [data-testid="stSidebar"] {
-        background-color: var(--apple-white);
-    }
-
     /* Success/Error Messages */
     .stSuccess, .stError, .stWarning, .stInfo {
-        border-radius: 10px;
-    }
-
-    /* Download Button */
-    .stDownloadButton > button {
-        background-color: var(--apple-blue);
-        color: var(--apple-white);
-        border: none;
-        border-radius: 10px;
-        padding: 12px 24px;
+        border-radius: 8px;
+        padding: 12px 16px;
     }
     </style>
     """, unsafe_allow_html=True)
 
+
+
     col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
-        with st.container():
-            st.markdown('<h1 class="login-title">登录</h1>', unsafe_allow_html=True)
-            st.markdown('<p class="login-subtitle">电商评论智能分析平台</p>', unsafe_allow_html=True)
+        st.markdown('<h1 class="login-title">登录</h1>', unsafe_allow_html=True)
+        st.markdown('<p class="login-subtitle">电商评论智能分析平台</p>', unsafe_allow_html=True)
 
-            create_usertable()
+        create_usertable()
 
-            tab1, tab2 = st.tabs(["身份验证", "注册账号"])
+        tab1, tab2 = st.tabs(["身份验证", "注册账号"])
 
-            with tab1:
-                username = st.text_input("用户名", placeholder="请输入用户名", key="login_user")
-                password = st.text_input("密码", type='password', placeholder="请输入密码", key="login_pass")
-                if st.button("登录系统", type="primary"):
-                    if not username or not password:
-                        st.warning("请填写完整的登录信息")
+        with tab1:
+            username = st.text_input("用户名", placeholder="请输入用户名", key="login_user")
+            password = st.text_input("密码", type='password', placeholder="请输入密码", key="login_pass")
+            if st.button("登录系统", type="primary"):
+                if not username or not password:
+                    st.warning("请填写完整的登录信息")
+                else:
+                    hashed_pswd = make_hashes(password)
+                    result = login_user(username, hashed_pswd)
+                    if result:
+                        st.session_state['logged_in'] = True
+                        st.session_state['current_user'] = username
+                        st.success("验证成功，正在进入系统...")
+                        st.rerun()
                     else:
-                        hashed_pswd = make_hashes(password)
-                        result = login_user(username, hashed_pswd)
-                        if result:
-                            st.session_state['logged_in'] = True
-                            st.session_state['current_user'] = username
-                            st.success("验证成功，正在进入系统...")
-                            st.rerun()
-                        else:
-                            st.error("验证失败：用户名或密码错误。")
+                        st.error("验证失败：用户名或密码错误。")
 
-            with tab2:
-                new_user = st.text_input("设定用户名", placeholder="请设定用户名", key="reg_user")
-                new_password = st.text_input("设定密码", type='password', placeholder="请设定密码", key="reg_pass")
-                if st.button("注册新用户"):
-                    if new_user and new_password:
-                        add_userdata(new_user, make_hashes(new_password))
-                        st.success("账号注册成功，请切换至登录标签进行操作。")
-                    else:
-                        st.warning("注册失败：需填写完整信息。")
+        with tab2:
+            new_user = st.text_input("设定用户名", placeholder="请设定用户名", key="reg_user")
+            new_password = st.text_input("设定密码", type='password', placeholder="请设定密码", key="reg_pass")
+            if st.button("注册新用户"):
+                if new_user and new_password:
+                    add_userdata(new_user, make_hashes(new_password))
+                    st.success("账号注册成功，请切换至登录标签进行操作。")
+                else:
+                    st.warning("注册失败：需填写完整信息。")
 
-        st.markdown('<p style="text-align: center; margin-top: 32px; color: #86868b; font-size: 12px;">© 2026 电商评论情感分析系统</p>', unsafe_allow_html=True)
+        st.markdown('<p style="text-align: center; margin-top: 32px; color: var(--apple-white); font-size: 12px;">© 2026 电商评论情感分析系统</p>', unsafe_allow_html=True)
 
 def main():
     st.markdown("""
@@ -538,41 +497,46 @@ def main():
     /* Hide Elements */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
+    [data-testid="stStatusWidget"] {display: none;}
 
     /* Page Title */
     h1 {
-        font-size: 28px !important;
+        font-size: 32px !important;
         font-weight: 600 !important;
         color: var(--apple-near-black) !important;
         letter-spacing: -0.5px !important;
         margin-bottom: 24px !important;
+        line-height: 1.07 !important;
     }
 
     h2 {
-        font-size: 22px !important;
-        font-weight: 600 !important;
+        font-size: 28px !important;
+        font-weight: 400 !important;
         color: var(--apple-near-black) !important;
         letter-spacing: -0.3px !important;
         margin-top: 24px !important;
+        line-height: 1.14 !important;
     }
 
     h3 {
-        font-size: 17px !important;
+        font-size: 21px !important;
         font-weight: 600 !important;
         color: var(--apple-near-black) !important;
+        letter-spacing: 0.231px !important;
+        line-height: 1.19 !important;
     }
 
     /* Metrics */
     [data-testid="stMetric"] {
         background: var(--apple-white);
         border: none;
-        border-radius: 12px;
+        border-radius: 8px;
         padding: 20px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+        box-shadow: rgba(0, 0, 0, 0.22) 3px 5px 30px 0px;
     }
 
     [data-testid="stMetricLabel"] {
-        font-size: 11px;
+        font-size: 12px;
         font-weight: 500;
         color: #86868b;
         text-transform: uppercase;
@@ -596,10 +560,10 @@ def main():
         background-color: var(--apple-blue) !important;
         color: var(--apple-white) !important;
         border: none !important;
-        border-radius: 10px !important;
-        padding: 12px 24px !important;
-        font-size: 14px !important;
-        font-weight: 500 !important;
+        border-radius: 8px !important;
+        padding: 8px 15px !important;
+        font-size: 17px !important;
+        font-weight: 400 !important;
         transition: background-color 0.2s ease !important;
     }
 
@@ -613,12 +577,13 @@ def main():
         background-color: var(--apple-white) !important;
         color: var(--apple-near-black) !important;
         border: 1px solid #d2d2d7 !important;
-        border-radius: 10px !important;
+        border-radius: 8px !important;
     }
 
     /* Sidebar */
     [data-testid="stSidebar"] {
         background-color: var(--apple-white);
+        backdrop-filter: saturate(180%) blur(20px);
     }
 
     [data-testid="stSidebarNav"] {
@@ -635,34 +600,34 @@ def main():
     .stSelectbox > div > div {
         background-color: var(--apple-white);
         border: 1px solid #d2d2d7;
-        border-radius: 10px;
+        border-radius: 8px;
     }
 
     /* Text Area */
     .stTextArea > div > div > textarea {
         background-color: var(--apple-white);
         border: 1px solid #d2d2d7;
-        border-radius: 10px;
+        border-radius: 8px;
         padding: 14px;
         transition: all 0.2s ease;
     }
 
     textarea:focus {
         box-shadow: none !important;
-        outline: none !important;
-        border: 1px solid #d2d2d7 !important;
+        outline: 2px solid var(--apple-blue) !important;
+        border: 1px solid var(--apple-blue) !important;
     }
 
     /* Also remove Streamlit's default focus styling */
     .stTextArea textarea:focus {
         box-shadow: none !important;
-        outline: none !important;
+        outline: 2px solid var(--apple-blue) !important;
     }
 
     /* Expander */
     .streamlit-expanderHeader {
         background-color: var(--apple-white);
-        border-radius: 10px;
+        border-radius: 8px;
         font-size: 14px;
         font-weight: 500;
     }
@@ -670,48 +635,127 @@ def main():
     /* Dataframe */
     [data-testid="stDataFrame"] {
         background-color: var(--apple-white);
-        border-radius: 12px;
+        border-radius: 8px;
     }
 
     /* Tabs */
+    .stTabs > div > div {
+        border-bottom: 1px solid #d2d2d7;
+    }
+
     .stTabs button {
         font-size: 14px;
         font-weight: 500;
+        color: #86868b;
+        background: transparent;
+        border: none;
+        padding: 12px 20px;
+        border-bottom: 2px solid transparent;
+        margin-right: 20px;
+    }
+
+    .stTabs button[data-testid="stTabActive"] {
+        color: var(--apple-near-black);
+        border-bottom-color: var(--apple-blue);
     }
 
     /* Success/Info/Warning/Error */
     .stSuccess {
         background-color: rgba(52, 199, 89, 0.12);
         color: #28a745;
-        border-radius: 10px;
+        border-radius: 8px;
+        padding: 12px 16px;
     }
 
     .stError {
         background-color: rgba(255, 59, 48, 0.12);
         color: #dc3545;
-        border-radius: 10px;
+        border-radius: 8px;
+        padding: 12px 16px;
     }
 
     .stWarning {
         background-color: rgba(255, 149, 0, 0.12);
         color: #e67e22;
-        border-radius: 10px;
+        border-radius: 8px;
+        padding: 12px 16px;
     }
 
     .stInfo {
         background-color: rgba(0, 113, 227, 0.12);
         color: var(--apple-blue);
-        border-radius: 10px;
+        border-radius: 8px;
+        padding: 12px 16px;
+    }
+
+    /* Link Button */
+    .link-button {
+        display: inline-block;
+        padding: 8px 16px;
+        background-color: transparent;
+        color: var(--apple-blue);
+        border: 1px solid var(--apple-blue);
+        border-radius: 980px;
+        font-size: 14px;
+        font-weight: 400;
+        text-decoration: none;
+        transition: all 0.2s ease;
+    }
+
+    .link-button:hover {
+        text-decoration: underline;
     }
     </style>
     """, unsafe_allow_html=True)
+
+    # Sidebar Header
+    st.sidebar.markdown('<div style="padding: 20px 0;"><h1 style="font-size: 24px; font-weight: 600; color: var(--apple-near-black); margin: 0; letter-spacing: -0.5px;">电商评论情感预测系统</h1></div>', unsafe_allow_html=True)
+
+    # Navigation
+    st.sidebar.markdown('<div style="margin: 20px 0;">', unsafe_allow_html=True)
+    app_mode = st.sidebar.radio(
+        "", 
+        ["批量挖掘", "监控大屏", "单条诊断", "模型训练"],
+        label_visibility="collapsed"
+    )
+    st.sidebar.markdown('</div>', unsafe_allow_html=True)
+
+    # Model Management
+    st.sidebar.markdown('<div style="margin: 30px 0;"><h3 style="font-size: 17px; font-weight: 600; color: var(--apple-near-black); margin: 0 0 16px 0;">模型管理</h3></div>', unsafe_allow_html=True)
+    
+    # 扫描当前目录下的模型文件
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    model_files = [f for f in os.listdir(current_dir) if f.endswith('.pth')]
+    
+    # 模型选择方式
+    model_select_mode = st.sidebar.radio("选择模型方式", ["使用当前目录模型", "上传模型文件"], horizontal=True)
+    
+    # 确保selected_model总是被定义
+    selected_model = "sentiment_model.pth"  # 默认值
+    
+    if model_select_mode == "使用当前目录模型":
+        if model_files:
+            selected_model = st.sidebar.selectbox("选择模型文件", model_files, index=0)
+        else:
+            st.sidebar.warning("未检测到模型文件，请先训练模型")
+    else:
+        # 允许用户上传模型文件
+        uploaded_model = st.sidebar.file_uploader("上传模型文件", type=["pth"])
+        if uploaded_model:
+            # 保存上传的模型文件
+            with open(os.path.join(current_dir, uploaded_model.name), "wb") as f:
+                f.write(uploaded_model.getbuffer())
+            selected_model = uploaded_model.name
+            st.sidebar.success(f"模型文件 {uploaded_model.name} 上传成功！")
+
+    domain = st.sidebar.selectbox("选择业务领域", ["电商通用", "外卖餐饮", "酒店住宿", "汽车出行"])
 
     if 'global_stop_words' not in st.session_state:
         st.session_state['global_stop_words'] = "酒店,宾馆,入住"
 
     if 'model' not in st.session_state or 'vocab' not in st.session_state:
         with st.spinner('系统内核初始化中...'):
-            model, vocab, default_data_path, status = load_resources()
+            model, vocab, default_data_path, status = load_resources(selected_model)
             st.session_state['model'] = model
             st.session_state['vocab'] = vocab
             st.session_state['default_data_path'] = default_data_path
@@ -727,35 +771,7 @@ def main():
     else:
         st.sidebar.warning(f"{status}")
 
-    st.sidebar.markdown('<p style="font-size: 20px; font-weight: 600; color: #1d1d1f; margin-bottom: 8px;">电商评论情感预测系统</p>', unsafe_allow_html=True)
-
-    st.sidebar.markdown("""
-    <div style="background: #f5f5f7; border-radius: 10px; padding: 16px; margin: 16px 0;">
-        <p style="font-size: 13px; color: #1d1d1f; margin: 0; line-height: 1.6;">
-            <strong>操作指南</strong><br>
-            1. 在「批量挖掘」上传或加载数据<br>
-            2. 启动全量深度分析<br>
-            3. 在「监控大屏」查看结果<br>
-            4. 在「单条诊断」测试单个文本
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    app_mode = st.sidebar.radio("系统功能导航", [
-        "批量挖掘",
-        "监控大屏",
-        "单条诊断"
-    ])
-
-    domain = st.sidebar.selectbox("选择业务领域", ["电商通用", "外卖餐饮", "酒店住宿", "汽车出行"])
-
-    st.sidebar.markdown("---")
-    st.sidebar.caption("Model Status: " + ("Online" if model else "Demo Mode"))
-    st.sidebar.write(f"操作员: **{st.session_state.get('current_user', 'Admin')}**")
-    if st.sidebar.button("安全退出", use_container_width=True):
-        st.session_state['logged_in'] = False
-        st.rerun()
-
+    # Advanced Settings
     with st.sidebar.expander("高级设置"):
         st.info("自定义停用词用于过滤无意义词汇，提高分析准确性。")
         stop_words_input = st.text_area("停用词 (逗号分隔)", value=st.session_state['global_stop_words'], label_visibility="collapsed")
@@ -763,10 +779,23 @@ def main():
             st.session_state['global_stop_words'] = stop_words_input
             st.success("设置已更新。")
 
+    # Footer
+    st.sidebar.markdown('<div style="position: absolute; bottom: 30px; width: 80%;">', unsafe_allow_html=True)
+    st.sidebar.markdown('---')
+    st.sidebar.caption("Model Status: " + ("Online" if model else "Demo Mode"))
+    st.sidebar.write(f"操作员: **{st.session_state.get('current_user', 'Admin')}**")
+    if st.sidebar.button("安全退出", use_container_width=True):
+        st.session_state['logged_in'] = False
+        st.rerun()
+    st.sidebar.markdown('</div>', unsafe_allow_html=True)
+
     if app_mode == "批量挖掘":
         st.title("数据批量导入与挖掘")
 
+        # Data Source Selection
+        st.markdown('<div style="margin: 30px 0;">', unsafe_allow_html=True)
         data_source = st.radio("选择数据源", ["本地上传文件", "加载系统演示数据集"], horizontal=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
         df = None
         if data_source == "本地上传文件":
@@ -878,6 +907,140 @@ def main():
             st.markdown("#### 文本分词结果")
             words = jieba.lcut(user_input)
             st.write(' '.join(words))
+
+    elif app_mode == "模型训练":
+        st.title("模型训练与评估")
+        
+        # Data Source
+        st.markdown('<div style="margin: 30px 0;"><h2>数据来源</h2></div>', unsafe_allow_html=True)
+        
+        # 数据来源选择
+        data_source = st.radio("选择训练数据", ["使用默认数据集", "上传自定义数据集"], horizontal=True)
+        
+        user_df = None
+        
+        if data_source == "上传自定义数据集":
+            uploaded_file = st.file_uploader("请选择 CSV 格式数据文件", type=["csv"])
+            if uploaded_file:
+                try:
+                    user_df = pd.read_csv(uploaded_file)
+                    st.success("数据上传成功！")
+                    st.dataframe(user_df.head(), use_container_width=True)
+                    
+                    # 测试数据集功能
+                    with st.expander("测试数据集"):
+                        st.markdown("### 数据集验证")
+                        
+                        if st.button("验证数据集"):
+                            # 检查必要的列
+                            required_columns = ['review', 'label']
+                            missing_columns = [col for col in required_columns if col not in user_df.columns]
+                            
+                            if missing_columns:
+                                st.error(f"数据集缺少必要的列：{', '.join(missing_columns)}")
+                                st.info("请确保数据集包含 'review'（评论文本）和 'label'（情感标签，0表示差评，1表示好评）列")
+                            else:
+                                # 检查数据类型和质量
+                                st.success("数据集包含所有必要的列！")
+                                
+                                # 显示数据集基本信息
+                                st.markdown("### 数据集信息")
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    st.metric("总行数", len(user_df))
+                                with col2:
+                                    st.metric("总列数", len(user_df.columns))
+                                with col3:
+                                    st.metric("非空评论数", user_df['review'].notna().sum())
+                                
+                                # 检查标签分布
+                                if 'label' in user_df.columns:
+                                    label_counts = user_df['label'].value_counts()
+                                    st.markdown("### 标签分布")
+                                    st.bar_chart(label_counts)
+                                    
+                                    # 检查标签值是否合理
+                                    unique_labels = user_df['label'].unique()
+                                    if all(label in [0, 1] for label in unique_labels):
+                                        st.success("标签值正确（0表示差评，1表示好评）")
+                                    else:
+                                        st.warning("标签值可能不正确，建议使用 0 表示差评，1 表示好评")
+                            
+                except UnicodeDecodeError:
+                    uploaded_file.seek(0)
+                    user_df = pd.read_csv(uploaded_file, encoding='gbk')
+                    st.success("数据上传成功！")
+                    st.dataframe(user_df.head(), use_container_width=True)
+                except Exception as e:
+                    st.error(f"数据读取失败：{str(e)}")
+        
+        # Model Training Configuration
+        st.markdown('<div style="margin: 30px 0;"><h2>模型训练配置</h2></div>', unsafe_allow_html=True)
+        
+        # 训练配置选项
+        epochs = st.slider("训练轮次", min_value=5, max_value=50, value=10, step=5)
+        batch_size = st.selectbox("批处理大小", [32, 64, 128], index=1)
+        st.caption("批处理大小：每次训练时同时处理的样本数量，影响训练速度和内存使用")
+        
+        # Training Results Visualization
+        st.markdown('<div style="margin: 30px 0;"><h2>训练结果可视化</h2></div>', unsafe_allow_html=True)
+        
+        if st.button("开始训练模型", type="primary", use_container_width=True):
+            with st.spinner("模型训练中，请耐心等待..."):
+                try:
+                    # 调用训练函数
+                    history, best_acc = run_training(user_df)
+                    
+                    st.success(f"训练完成！最佳准确率：{best_acc:.2f}%")
+                    
+                    # 构建训练历史数据框
+                    train_df = pd.DataFrame(history)
+                    
+                    # 绘制损失曲线
+                    fig_loss = px.line(train_df, x='epochs', y='loss', 
+                                     title='训练损失曲线',
+                                     color_discrete_sequence=['#0071e3'])
+                    fig_loss.update_layout(
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        paper_bgcolor='rgba(0,0,0,0)',
+                        title_font=dict(size=16, color='#1d1d1f'),
+                        xaxis=dict(title='轮次', gridcolor='#f5f5f7'),
+                        yaxis=dict(title='损失值', gridcolor='#f5f5f7')
+                    )
+                    
+                    # 绘制准确率曲线
+                    fig_acc = px.line(train_df, x='epochs', y='accuracy', 
+                                    title='验证准确率曲线',
+                                    color_discrete_sequence=['#34c759'])
+                    fig_acc.update_layout(
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        paper_bgcolor='rgba(0,0,0,0)',
+                        title_font=dict(size=16, color='#1d1d1f'),
+                        xaxis=dict(title='轮次', gridcolor='#f5f5f7'),
+                        yaxis=dict(title='准确率 (%)', gridcolor='#f5f5f7')
+                    )
+                    
+                    # 显示图表
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.plotly_chart(fig_loss, use_container_width=True)
+                    with col2:
+                        st.plotly_chart(fig_acc, use_container_width=True)
+                    
+                    # 显示训练指标
+                    st.markdown("### 训练指标汇总")
+                    col_metrics1, col_metrics2, col_metrics3 = st.columns(3)
+                    with col_metrics1:
+                        st.metric("最佳准确率", f"{best_acc:.2f}%")
+                    with col_metrics2:
+                        st.metric("最终损失值", f"{history['loss'][-1]:.4f}")
+                    with col_metrics3:
+                        st.metric("训练轮次", f"{len(history['epochs'])}")
+                    
+                    st.info("模型已保存到 sentiment_model.pth，您可以在其他功能中使用新训练的模型。")
+                    
+                except Exception as e:
+                    st.error(f"训练失败：{str(e)}")
 
 if __name__ == "__main__":
     st.set_page_config(page_title="电商评论情感分析系统", page_icon="🛍️", layout="wide", initial_sidebar_state="expanded")
