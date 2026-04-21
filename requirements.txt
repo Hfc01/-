@@ -4,4 +4,6 @@ numpy
 jieba
 wordcloud
 matplotlib
+scikit-learn
+plotly
 torch --index-url https://download.pytorch.org/whl/cpu
