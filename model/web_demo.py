@@ -711,6 +711,25 @@ def main():
     # Sidebar Header
     st.sidebar.markdown('<div style="padding: 20px 0;"><h1 style="font-size: 24px; font-weight: 600; color: var(--apple-near-black); margin: 0; letter-spacing: -0.5px;">电商评论情感预测系统</h1></div>', unsafe_allow_html=True)
 
+    # Usage Guide
+    st.sidebar.markdown("""
+    <div style="background: #f5f5f7; border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+        <p style="font-size: 12px; font-weight: 600; color: #86868b; margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 0.5px;">使用流程</p>
+        <div style="display: flex; align-items: center; margin-bottom: 6px;">
+            <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: #0071e3; color: #fff; font-size: 11px; font-weight: 600; margin-right: 10px; flex-shrink: 0;">1</span>
+            <span style="font-size: 13px; color: #1d1d1f;">进入「批量挖掘」上传数据</span>
+        </div>
+        <div style="display: flex; align-items: center; margin-bottom: 6px;">
+            <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: #0071e3; color: #fff; font-size: 11px; font-weight: 600; margin-right: 10px; flex-shrink: 0;">2</span>
+            <span style="font-size: 13px; color: #1d1d1f;">点击「启动全量深度分析」</span>
+        </div>
+        <div style="display: flex; align-items: center;">
+            <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: #0071e3; color: #fff; font-size: 11px; font-weight: 600; margin-right: 10px; flex-shrink: 0;">3</span>
+            <span style="font-size: 13px; color: #1d1d1f;">前往「监控大屏」查看结果</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
     # Navigation
     st.sidebar.markdown('<div style="margin: 20px 0;">', unsafe_allow_html=True)
     app_mode = st.sidebar.radio(
