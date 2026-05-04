@@ -26,18 +26,28 @@ def check_hashes(password, hashed_text):
     return False
 
 def create_usertable():
+    """创建用户表，username 设为唯一约束"""
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
-    c.execute('CREATE TABLE IF NOT EXISTS userstable(username TEXT, password TEXT)')
+    c.execute('CREATE TABLE IF NOT EXISTS userstable(username TEXT PRIMARY KEY, password TEXT)')
     conn.commit()
     conn.close()
 
 def add_userdata(username, password):
+    """
+    注册新用户。先检查用户名是否存在，存在返回 False，否则插入并返回 True。
+    """
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
+    # 检查用户名是否已存在
+    c.execute('SELECT * FROM userstable WHERE username = ?', (username,))
+    if c.fetchone() is not None:
+        conn.close()
+        return False
     c.execute('INSERT INTO userstable(username, password) VALUES (?,?)', (username, password))
     conn.commit()
     conn.close()
+    return True
 
 def login_user(username, password):
     conn = sqlite3.connect('users.db')
@@ -68,45 +78,104 @@ class SentimentLSTM(nn.Module):
         return self.fc(final_hidden)
 
 def load_resources(model_filename='sentiment_model.pth'):
+    """
+    从 checkpoint 中读取 vocab 和 model_state_dict。
+    不再根据默认数据集重新构建词表。
+    """
     current_dir = os.path.dirname(os.path.abspath(__file__))
     data_path = os.path.join(current_dir, '..', 'data', 'ChnSentiCorp_htl_all.csv')
     model_path = os.path.join(current_dir, model_filename)
 
     if not os.path.exists(model_path):
-        return None, {"<PAD>": 0, "<UNK>": 1}, data_path, "未检测到模型文件，系统将以演示模式运行。"
-
-    try:
-        if os.path.exists(data_path):
-            try:
-                df = pd.read_csv(data_path)
-            except:
-                df = pd.read_csv(data_path, encoding='gbk')
-            df = df.dropna(subset=['review'])
-            all_words = [word for text in df['review'].astype(str) for word in jieba.lcut(text)]
-        else:
-            all_words = ["好", "差", "服务", "环境", "干净"]
-
-        vocab = {"<PAD>": 0, "<UNK>": 1}
-        for word, _ in Counter(all_words).most_common(5000):
-            vocab[word] = len(vocab)
-    except Exception as e:
-        return None, None, None, f"数据加载失败: {str(e)}"
+        return None, {"<PAD>": 0, "<UNK>": 1}, data_path, "未检测到模型文件，系统将以规则降级模式运行。"
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = SentimentLSTM(len(vocab), EMBEDDING_DIM, HIDDEN_DIM)
+
     try:
-        model.load_state_dict(torch.load(model_path, map_location=device))
+        # 加载 checkpoint（weights_only=False 因为 checkpoint 包含非tensor数据如 vocab/config）
+        checkpoint = torch.load(model_path, map_location=device, weights_only=False)
+
+        # 兼容旧版只包含 state_dict 的模型文件
+        if not isinstance(checkpoint, dict):
+            return None, None, None, "模型文件格式不兼容(旧版state_dict)，请重新训练模型。"
+        if "model_state_dict" not in checkpoint:
+            return None, None, None, "模型文件缺少model_state_dict字段，请重新训练模型。"
+        if "vocab" not in checkpoint:
+            return None, None, None, "模型文件缺少词表信息，请重新训练模型。"
+        if "config" not in checkpoint:
+            return None, None, None, "模型文件缺少config字段，请重新训练模型。"
+
+        # 从 checkpoint 读取配置
+        cfg = checkpoint["config"]
+        vocab_size = cfg.get("vocab_size", len(checkpoint["vocab"]))
+        embed_dim = cfg.get("embed_dim", EMBEDDING_DIM)
+        hidden_dim = cfg.get("hidden_dim", HIDDEN_DIM)
+        output_dim = cfg.get("output_dim", 2)
+
+        # 使用 checkpoint 中的 vocab
+        vocab = checkpoint["vocab"]
+
+        # 构建模型并加载权重
+        model = SentimentLSTM(vocab_size, embed_dim, hidden_dim, output_dim)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        model.to(device)
         model.eval()
+
         status = "SUCCESS"
     except Exception as e:
         model = None
-        status = f"模型权重加载失败: {str(e)}"
+        vocab = {"<PAD>": 0, "<UNK>": 1}
+        status = f"模型加载失败: {str(e)}"
 
     return model, vocab, data_path, status
 
 # ==========================================
 # 2. 核心分析与可视化工具函数
 # ==========================================
+def rule_based_predict(text):
+    """
+    基于关键词的规则降级预测函数。
+    当模型文件不存在时使用，作为兜底方案。
+    """
+    positive_words = ["好", "满意", "喜欢", "推荐", "不错", "优秀", "划算", "值得", "干净", "方便"]
+    negative_words = ["差", "失望", "垃圾", "难用", "不推荐", "糟糕", "脏", "慢", "贵", "后悔"]
+
+    pos_count = sum(1 for w in positive_words if w in text)
+    neg_count = sum(1 for w in negative_words if w in text)
+
+    return "好评" if pos_count >= neg_count else "差评"
+
+def predict_sentiment_with_confidence(texts, model, vocab):
+    """
+    统一的情感预测函数，返回 labels 和 confidences 两个列表。
+    - 模型存在时：用 softmax 最大概率作为置信度，注意 tensor_input.to(device)
+    - 模型不存在时：用 rule_based_predict，置信度统一为 0.60
+    """
+    if not model:
+        labels = [rule_based_predict(str(t)) for t in texts]
+        confidences = [0.60] * len(texts)
+        return labels, confidences
+
+    input_ids = []
+    for text in texts:
+        words = jieba.lcut(str(text))
+        ids = [vocab.get(w, 1) for w in words]
+        ids = ids[:MAX_LEN] if len(ids) > MAX_LEN else ids + [0] * (MAX_LEN - len(ids))
+        input_ids.append(ids)
+
+    tensor_input = torch.tensor(input_ids, dtype=torch.long)
+    device = next(model.parameters()).device
+    tensor_input = tensor_input.to(device)
+
+    with torch.no_grad():
+        logits = model(tensor_input)
+        probs = torch.nn.functional.softmax(logits, dim=1)
+        max_probs, preds = torch.max(probs, dim=1)
+
+    labels = ["好评" if p == 1 else "差评" for p in preds.cpu().tolist()]
+    confidences = [round(c, 4) for c in max_probs.cpu().tolist()]
+    return labels, confidences
+
 def analyze_aspect(text, domain="电商通用"):
     domain_aspects = {
         "外卖餐饮": {
@@ -181,25 +250,6 @@ def generate_wordcloud(text_list, custom_stop_words=""):
     plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
     return fig
 
-def predict_sentiment(texts, model, vocab):
-    if not model:
-        return ["好评" if np.random.rand() > 0.4 else "差评" for _ in texts]
-
-    input_ids = []
-    for text in texts:
-        words = jieba.lcut(str(text))
-        ids = [vocab.get(w, 1) for w in words]
-        ids = ids[:MAX_LEN] if len(ids) > MAX_LEN else ids + [0]*(MAX_LEN-len(ids))
-        input_ids.append(ids)
-
-    tensor_input = torch.tensor(input_ids, dtype=torch.long)
-    device = next(model.parameters()).device
-    tensor_input = tensor_input.to(device)
-
-    with torch.no_grad():
-        preds = torch.argmax(model(tensor_input), dim=1).cpu().tolist()
-    return ["好评" if p == 1 else "差评" for p in preds]
-
 # ==========================================
 # 3. 页面渲染模块
 # ==========================================
@@ -217,7 +267,7 @@ def render_dashboard(df):
     with col3:
         st.metric("总体差评数", f"{neg_count:,} 条", f"{1-pos_rate:.1%}")
     with col4:
-        st.metric("模型状态", "在线运行")
+        st.metric("模型状态", "在线运行" if st.session_state.get('model') else "规则降级")
 
     col_chart1, col_chart2 = st.columns([1, 1])
     with col_chart1:
@@ -462,12 +512,15 @@ def login_page():
             new_password = st.text_input("设定密码", type='password', placeholder="请设定密码", key="reg_pass")
             if st.button("注册新用户"):
                 if new_user and new_password:
-                    add_userdata(new_user, make_hashes(new_password))
-                    st.success("账号注册成功，请切换至登录标签进行操作。")
+                    success = add_userdata(new_user, make_hashes(new_password))
+                    if success:
+                        st.success("账号注册成功，请切换至登录标签进行操作。")
+                    else:
+                        st.error("用户名已存在，请更换用户名后重试。")
                 else:
                     st.warning("注册失败：需填写完整信息。")
 
-        st.markdown('<p style="text-align: center; margin-top: 32px; color: var(--apple-white); font-size: 12px;">© 2026 电商评论情感分析系统</p>', unsafe_allow_html=True)
+        st.markdown('<p style="text-align: center; margin-top: 32px; color: #86868b; font-size: 12px;">&copy; 2026 电商评论情感分析系统</p>', unsafe_allow_html=True)
 
 def main():
     st.markdown("""
@@ -733,7 +786,7 @@ def main():
     # Navigation
     st.sidebar.markdown('<div style="margin: 20px 0;">', unsafe_allow_html=True)
     app_mode = st.sidebar.radio(
-        "", 
+        "",
         ["批量挖掘", "监控大屏", "单条诊断", "模型训练"],
         label_visibility="collapsed"
     )
@@ -741,17 +794,17 @@ def main():
 
     # Model Management
     st.sidebar.markdown('<div style="margin: 30px 0;"><h3 style="font-size: 17px; font-weight: 600; color: var(--apple-near-black); margin: 0 0 16px 0;">模型管理</h3></div>', unsafe_allow_html=True)
-    
+
     # 扫描当前目录下的模型文件
     current_dir = os.path.dirname(os.path.abspath(__file__))
     model_files = [f for f in os.listdir(current_dir) if f.endswith('.pth')]
-    
+
     # 模型选择方式
     model_select_mode = st.sidebar.radio("选择模型方式", ["使用当前目录模型", "上传模型文件"], horizontal=True)
-    
+
     # 确保selected_model总是被定义
     selected_model = "sentiment_model.pth"  # 默认值
-    
+
     if model_select_mode == "使用当前目录模型":
         if model_files:
             selected_model = st.sidebar.selectbox("选择模型文件", model_files, index=0)
@@ -772,13 +825,21 @@ def main():
     if 'global_stop_words' not in st.session_state:
         st.session_state['global_stop_words'] = "酒店,宾馆,入住"
 
-    if 'model' not in st.session_state or 'vocab' not in st.session_state:
+    # 模型加载逻辑：检测 selected_model 是否变化，变化则重新加载
+    need_reload = False
+    if 'loaded_model_name' not in st.session_state:
+        need_reload = True
+    elif st.session_state['loaded_model_name'] != selected_model:
+        need_reload = True
+
+    if 'model' not in st.session_state or 'vocab' not in st.session_state or need_reload:
         with st.spinner('系统内核初始化中...'):
             model, vocab, default_data_path, status = load_resources(selected_model)
             st.session_state['model'] = model
             st.session_state['vocab'] = vocab
             st.session_state['default_data_path'] = default_data_path
             st.session_state['status'] = status
+            st.session_state['loaded_model_name'] = selected_model
     else:
         model = st.session_state['model']
         vocab = st.session_state['vocab']
@@ -799,7 +860,7 @@ def main():
             st.success("设置已更新。")
 
     # Footer
-    st.sidebar.markdown('<div style="position: absolute; bottom: 30px; width: 80%;">', unsafe_allow_html=True)
+    st.sidebar.markdown('<div style="margin-top: 30px; padding: 0 4px;">', unsafe_allow_html=True)
     st.sidebar.markdown('---')
     st.sidebar.caption("Model Status: " + ("Online" if model else "Demo Mode"))
     st.sidebar.write(f"操作员: **{st.session_state.get('current_user', 'Admin')}**")
@@ -835,22 +896,38 @@ def main():
 
         if df is not None:
             cols = df.columns.tolist()
-            keywords = ['review', '评论', 'content', 'text', '内容']
-            text_col = cols[0]
+            # 自动识别并排除标签列（演示时不暴露答案标签）
+            label_keywords = ['label', '标签', 'sentiment', '情感', 'label_cn']
+            label_cols = [c for c in cols if any(k in c.lower() for k in label_keywords)]
+            if label_cols:
+                st.caption(f"已自动屏蔽标签列: {', '.join(label_cols)}（演示模式下不显示原始标签）")
+
+            # 识别文本列（排除标签列）
+            text_keywords = ['review', '评论', 'content', 'text', '内容']
+            text_col = None
             for col in cols:
-                if any(k in col.lower() for k in keywords):
+                if col not in label_cols and any(k in col.lower() for k in text_keywords):
                     text_col = col; break
+            if text_col is None:
+                # fallback：取第一个非标签列
+                non_label = [c for c in cols if c not in label_cols]
+                text_col = non_label[0] if non_label else cols[0]
 
             st.info(f"识别分析对象列：`[{text_col}]`")
             st.markdown("#### 数据预览")
-            st.dataframe(df.head(5), use_container_width=True)
+            # 预览时隐藏标签列
+            display_cols = [c for c in cols if c not in label_cols]
+            st.dataframe(df[display_cols].head(5), use_container_width=True)
 
             if st.button("启动全量深度分析", type="primary", use_container_width=True):
                 progress_bar = st.progress(0)
                 with st.spinner("执行分析中..."):
                     try:
                         texts = df[text_col].astype(str).tolist()
-                        df['预测结果'] = predict_sentiment(texts, model, vocab)
+                        # 使用统一预测函数，返回 labels 和 confidences
+                        labels, confs = predict_sentiment_with_confidence(texts, model, vocab)
+                        df['预测结果'] = labels
+                        df['置信度'] = confs
                         progress_bar.progress(50)
                         df['维度列表'] = df[text_col].apply(lambda x: analyze_aspect(x, domain))
                         df['涉及维度'] = df['维度列表'].apply(lambda x: ", ".join(x))
@@ -864,7 +941,9 @@ def main():
         if 'master_df' in st.session_state:
             st.markdown("#### 数据导出")
             res_df = st.session_state['master_df']
-            csv_data = res_df.drop(columns=['维度列表'], errors='ignore').to_csv(index=False).encode('utf-8-sig')
+            # 导出时排除维度列表和原始标签列，保留置信度列
+            export_drop = ['维度列表'] + [c for c in res_df.columns if any(k in c.lower() for k in ['label', '标签', 'sentiment', '情感'])]
+            csv_data = res_df.drop(columns=export_drop, errors='ignore').to_csv(index=False).encode('utf-8-sig')
             st.download_button("导出分析结果 (CSV)", csv_data, 'output.csv', 'text/csv')
 
     elif app_mode == "监控大屏":
@@ -901,19 +980,10 @@ def main():
         if submit_btn and user_input.strip():
             with st.spinner("神经网络推断中..."):
                 aspects = analyze_aspect(user_input, domain)
-                if model:
-                    words = jieba.lcut(user_input)
-                    ids = [vocab.get(w, 1) for w in words]
-                    ids = ids[:MAX_LEN] if len(ids) > MAX_LEN else ids + [0]*(MAX_LEN-len(ids))
-                    tensor_input = torch.tensor([ids], dtype=torch.long)
-                    with torch.no_grad():
-                        prob = torch.nn.functional.softmax(model(tensor_input), dim=1)
-                        pred_class = torch.argmax(prob).item()
-                        conf = prob[0][pred_class].item()
-                    res_label = "好评" if pred_class == 1 else "差评"
-                else:
-                    res_label = "好评" if "好" in user_input else "差评"
-                    conf = 0.95
+                # 使用统一预测函数
+                labels, confs = predict_sentiment_with_confidence([user_input], model, vocab)
+                res_label = labels[0]
+                conf = confs[0]
 
             st.markdown("### 诊断报告")
             col_res1, col_res2, col_res3 = st.columns(3)
@@ -929,15 +999,15 @@ def main():
 
     elif app_mode == "模型训练":
         st.title("模型训练与评估")
-        
+
         # Data Source
         st.markdown('<div style="margin: 30px 0;"><h2>数据来源</h2></div>', unsafe_allow_html=True)
-        
+
         # 数据来源选择
         data_source = st.radio("选择训练数据", ["使用默认数据集", "上传自定义数据集"], horizontal=True)
-        
+
         user_df = None
-        
+
         if data_source == "上传自定义数据集":
             uploaded_file = st.file_uploader("请选择 CSV 格式数据文件", type=["csv"])
             if uploaded_file:
@@ -945,23 +1015,23 @@ def main():
                     user_df = pd.read_csv(uploaded_file)
                     st.success("数据上传成功！")
                     st.dataframe(user_df.head(), use_container_width=True)
-                    
+
                     # 测试数据集功能
                     with st.expander("测试数据集"):
                         st.markdown("### 数据集验证")
-                        
+
                         if st.button("验证数据集"):
                             # 检查必要的列
                             required_columns = ['review', 'label']
                             missing_columns = [col for col in required_columns if col not in user_df.columns]
-                            
+
                             if missing_columns:
                                 st.error(f"数据集缺少必要的列：{', '.join(missing_columns)}")
                                 st.info("请确保数据集包含 'review'（评论文本）和 'label'（情感标签，0表示差评，1表示好评）列")
                             else:
                                 # 检查数据类型和质量
                                 st.success("数据集包含所有必要的列！")
-                                
+
                                 # 显示数据集基本信息
                                 st.markdown("### 数据集信息")
                                 col1, col2, col3 = st.columns(3)
@@ -971,20 +1041,20 @@ def main():
                                     st.metric("总列数", len(user_df.columns))
                                 with col3:
                                     st.metric("非空评论数", user_df['review'].notna().sum())
-                                
+
                                 # 检查标签分布
                                 if 'label' in user_df.columns:
                                     label_counts = user_df['label'].value_counts()
                                     st.markdown("### 标签分布")
                                     st.bar_chart(label_counts)
-                                    
+
                                     # 检查标签值是否合理
                                     unique_labels = user_df['label'].unique()
                                     if all(label in [0, 1] for label in unique_labels):
                                         st.success("标签值正确（0表示差评，1表示好评）")
                                     else:
                                         st.warning("标签值可能不正确，建议使用 0 表示差评，1 表示好评")
-                            
+
                 except UnicodeDecodeError:
                     uploaded_file.seek(0)
                     user_df = pd.read_csv(uploaded_file, encoding='gbk')
@@ -992,31 +1062,31 @@ def main():
                     st.dataframe(user_df.head(), use_container_width=True)
                 except Exception as e:
                     st.error(f"数据读取失败：{str(e)}")
-        
+
         # Model Training Configuration
         st.markdown('<div style="margin: 30px 0;"><h2>模型训练配置</h2></div>', unsafe_allow_html=True)
-        
+
         # 训练配置选项
         epochs = st.slider("训练轮次", min_value=5, max_value=50, value=10, step=5)
         batch_size = st.selectbox("批处理大小", [32, 64, 128], index=1)
         st.caption("批处理大小：每次训练时同时处理的样本数量，影响训练速度和内存使用")
-        
+
         # Training Results Visualization
         st.markdown('<div style="margin: 30px 0;"><h2>训练结果可视化</h2></div>', unsafe_allow_html=True)
-        
+
         if st.button("开始训练模型", type="primary", use_container_width=True):
             with st.spinner("模型训练中，请耐心等待..."):
                 try:
-                    # 调用训练函数
-                    history, best_acc = run_training(user_df)
-                    
-                    st.success(f"训练完成！最佳准确率：{best_acc:.2f}%")
-                    
+                    # 调用训练函数，接收三个返回值
+                    history, best_acc, test_metrics = run_training(user_df, epochs=epochs, batch_size=batch_size)
+
+                    st.success(f"训练完成！最佳验证准确率：{best_acc:.2f}%")
+
                     # 构建训练历史数据框
                     train_df = pd.DataFrame(history)
-                    
+
                     # 绘制损失曲线
-                    fig_loss = px.line(train_df, x='epochs', y='loss', 
+                    fig_loss = px.line(train_df, x='epochs', y='loss',
                                      title='训练损失曲线',
                                      color_discrete_sequence=['#0071e3'])
                     fig_loss.update_layout(
@@ -1026,9 +1096,9 @@ def main():
                         xaxis=dict(title='轮次', gridcolor='#f5f5f7'),
                         yaxis=dict(title='损失值', gridcolor='#f5f5f7')
                     )
-                    
+
                     # 绘制准确率曲线
-                    fig_acc = px.line(train_df, x='epochs', y='accuracy', 
+                    fig_acc = px.line(train_df, x='epochs', y='accuracy',
                                     title='验证准确率曲线',
                                     color_discrete_sequence=['#34c759'])
                     fig_acc.update_layout(
@@ -1038,31 +1108,58 @@ def main():
                         xaxis=dict(title='轮次', gridcolor='#f5f5f7'),
                         yaxis=dict(title='准确率 (%)', gridcolor='#f5f5f7')
                     )
-                    
+
                     # 显示图表
                     col1, col2 = st.columns(2)
                     with col1:
                         st.plotly_chart(fig_loss, use_container_width=True)
                     with col2:
                         st.plotly_chart(fig_acc, use_container_width=True)
-                    
+
                     # 显示训练指标
                     st.markdown("### 训练指标汇总")
                     col_metrics1, col_metrics2, col_metrics3 = st.columns(3)
                     with col_metrics1:
-                        st.metric("最佳准确率", f"{best_acc:.2f}%")
+                        st.metric("最佳验证准确率", f"{best_acc:.2f}%")
                     with col_metrics2:
                         st.metric("最终损失值", f"{history['loss'][-1]:.4f}")
                     with col_metrics3:
                         st.metric("训练轮次", f"{len(history['epochs'])}")
-                    
-                    st.info("模型已保存到 sentiment_model.pth，您可以在其他功能中使用新训练的模型。")
-                    
+
+                    # 显示测试集评估指标
+                    st.markdown("### 测试集评估结果")
+                    col_test1, col_test2, col_test3, col_test4 = st.columns(4)
+                    with col_test1:
+                        st.metric("准确率 (Acc)", f"{test_metrics['accuracy']:.2f}%")
+                    with col_test2:
+                        st.metric("精确率 (Prec)", f"{test_metrics['precision']:.2f}%")
+                    with col_test3:
+                        st.metric("召回率 (Recall)", f"{test_metrics['recall']:.2f}%")
+                    with col_test4:
+                        st.metric("F1值", f"{test_metrics['f1']:.2f}%")
+
+                    # 显示混淆矩阵
+                    cm = test_metrics['confusion_matrix']
+                    st.markdown("#### 混淆矩阵")
+                    cm_df = pd.DataFrame(
+                        cm,
+                        columns=['预测差评', '预测好评'],
+                        index=['实际差评', '实际好评']
+                    )
+                    st.dataframe(cm_df, use_container_width=True)
+
+                    st.info("模型已保存到 sentiment_model.pth（包含完整 checkpoint：词表、配置、权重和测试指标），您可以在其他功能中使用新训练的模型。")
+
+                    # 清除旧的model/vocab/labeled_model_name/status，使系统下次重新加载新模型
+                    for key in ['model', 'vocab', 'loaded_model_name', 'status']:
+                        if key in st.session_state:
+                            del st.session_state[key]
+
                 except Exception as e:
                     st.error(f"训练失败：{str(e)}")
 
 if __name__ == "__main__":
-    st.set_page_config(page_title="电商评论情感分析系统", page_icon="🛍️", layout="wide", initial_sidebar_state="expanded")
+    st.set_page_config(page_title="电商评论情感分析系统", page_icon="\U0001f6cd\ufe0f", layout="wide", initial_sidebar_state="expanded")
 
     if 'logged_in' not in st.session_state:
         st.session_state['logged_in'] = False
