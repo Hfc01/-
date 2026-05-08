@@ -1,0 +1,34 @@
+# 电商评论情感预测系统 - 模块说明
+
+## 1. database.py
+- **功能**：用户认证与数据库管理模块
+- **包含函数**：
+  - make_hashes: 对密码进行哈希处理
+  - create_usertable: 创建用户表
+  - add_userdata: 添加用户数据
+  - login_user: 用户登录验证
+- **用途**：处理系统的用户认证功能，包括注册和登录
+
+## 2. model.py
+- **功能**：PyTorch模型定义与资源加载模块
+- **包含内容**：
+  - 常量定义：MAX_LEN, EMBEDDING_DIM, HIDDEN_DIM
+  - SentimentLSTM类：情感分析LSTM模型定义
+  - load_resources函数：加载模型和词汇表资源
+- **用途**：提供情感分析模型的定义和资源加载功能
+
+## 3. utils.py
+- **功能**：数据处理和可视化工具模块
+- **包含函数**：
+  - analyze_aspect: 分析文本涉及的维度
+  - generate_wordcloud: 生成词云
+  - predict_sentiment: 预测文本情感
+- **用途**：提供数据处理和可视化的工具函数，支持系统的核心分析功能
+
+## 4. web_demo.py
+- **功能**：主入口文件，Streamlit应用界面
+- **包含内容**：
+  - 页面渲染函数
+  - 登录页面
+  - 主应用逻辑
+- **用途**：作为系统的主入口，处理用户界面和业务逻辑的整合
