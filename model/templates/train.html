@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+{% block title %}模型训练 - 电商评论情感分析{% endblock %}
+{% block breadcrumb %}模型训练{% endblock %}
+
+{% block content %}
+<div class="p-6 lg:p-8">
+    <div class="mb-6">
+        <h2 class="text-2xl font-bold text-slate-800">模型训练与评估</h2>
+        <p class="text-slate-500 text-sm mt-1">配置参数并训练 LSTM 情感分类模型</p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Config Card -->
+        <div class="lg:col-span-1">
+            <div class="card bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <h3 class="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                    <i data-lucide="settings-2" class="w-4 h-4 text-slate-500"></i> 训练配置
+                </h3>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1.5">数据来源</label>
+                        <div class="flex gap-2">
+                            <button class="flex-1 py-2 px-3 rounded-lg text-sm font-medium bg-blue-50 text-blue-700 border border-blue-200" id="btn-default-data" onclick="toggleDataSource('default')">默认数据集</button>
+                            <button class="flex-1 py-2 px-3 rounded-lg text-sm font-medium text-slate-600 border border-slate-300 hover:bg-slate-50" id="btn-upload-data" onclick="toggleDataSource('upload')">自定义上传</button>
+                        </div>
+                    </div>
+
+                    <div id="upload-area" class="hidden">
+                        <input type="file" id="train-file" accept=".csv" class="w-full text-sm text-slate-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1.5">训练轮次: <span id="epochs-val">10</span></label>
+                        <input type="range" id="epochs" min="5" max="50" value="10" step="5" class="w-full accent-blue-600" oninput="document.getElementById('epochs-val').textContent=this.value">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1.5">批处理大小</label>
+                        <select id="batch-size" class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none">
+                            <option value="32">32</option>
+                            <option value="64" selected>64</option>
+                            <option value="128">128</option>
+                        </select>
+                    </div>
+
+                    <button id="train-btn" class="btn-primary w-full mt-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-medium text-sm flex items-center justify-center gap-2">
+                        <i data-lucide="play" class="w-4 h-4"></i> 开始训练
+                    </button>
+                </div>
+            </div>
+
+            <!-- Model Status -->
+            <div class="card bg-white rounded-xl shadow-sm border border-slate-200 p-5 mt-4">
+                <h4 class="font-semibold text-slate-800 text-sm mb-3 flex items-center gap-2">
+                    <i data-lucide="cpu" class="w-4 h-4 text-slate-500"></i> 模型状态
+                </h4>
+                <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 bg-green-500 rounded-full pulse-dot" id="status-dot"></span>
+                    <span class="text-sm text-slate-600" id="status-text">加载中...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results -->
+        <div class="lg:col-span-2">
+            <div id="train-empty" class="card bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
+                <div class="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i data-lucide="cpu" class="w-8 h-8 text-slate-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-slate-700 mb-2">准备训练</h3>
+                <p class="text-slate-500 text-sm">配置参数后点击「开始训练」</p>
+            </div>
+
+            <div id="train-progress" class="hidden card bg-white rounded-xl shadow-sm border border-slate-200 p-6 text-center">
+                <div class="animate-spin-slow w-10 h-10 border-3 border-blue-600 border-t-transparent rounded-full mx-auto mb-3"></div>
+                <p class="text-slate-700 font-medium">模型训练中，请耐心等待...</p>
+                <p class="text-sm text-slate-500 mt-1">这可能需要几分钟时间</p>
+            </div>
+
+            <div id="train-result" class="hidden space-y-6">
+                <!-- Metrics -->
+                <div class="grid grid-cols-4 gap-4">
+                    <div class="card bg-white rounded-xl shadow-sm border border-slate-200 p-4 text-center">
+                        <p class="text-xs text-slate-500 mb-1">最佳验证准确率</p>
+                        <p class="text-2xl font-bold text-green-600" id="t-best-acc">-</p>
+                    </div>
+                    <div class="card bg-white rounded-xl shadow-sm border border-slate-200 p-4 text-center">
+                        <p class="text-xs text-slate-500 mb-1">最终损失值</p>
+                        <p class="text-2xl font-bold text-slate-800" id="t-loss">-</p>
+                    </div>
+                    <div class="card bg-white rounded-xl shadow-sm border border-slate-200 p-4 text-center">
+                        <p class="text-xs text-slate-500 mb-1">训练轮次</p>
+                        <p class="text-2xl font-bold text-slate-800" id="t-epochs">-</p>
+                    </div>
+                    <div class="card bg-white rounded-xl shadow-sm border border-slate-200 p-4 text-center">
+                        <p class="text-xs text-slate-500 mb-1">模型状态</p>
+                        <p class="text-sm font-medium text-green-600">已保存</p>
+                    </div>
+                </div>
+
+                <!-- Test Metrics -->
+                <div class="card bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                    <h4 class="font-semibold text-slate-800 mb-4">测试集评估</h4>
+                    <div class="grid grid-cols-4 gap-4">
+                        <div class="text-center">
+                            <p class="text-xs text-slate-500 mb-1">准确率</p>
+                            <p class="text-xl font-bold text-blue-600" id="tm-acc">-</p>
+                        </div>
+                        <div class="text-center">
+                            <p class="text-xs text-slate-500 mb-1">精确率</p>
+                            <p class="text-xl font-bold text-blue-600" id="tm-prec">-</p>
+                        </div>
+                        <div class="text-center">
+                            <p class="text-xs text-slate-500 mb-1">召回率</p>
+                            <p class="text-xl font-bold text-blue-600" id="tm-recall">-</p>
+                        </div>
+                        <div class="text-center">
+                            <p class="text-xs text-slate-500 mb-1">F1值</p>
+                            <p class="text-xl font-bold text-blue-600" id="tm-f1">-</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="card bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                        <h4 class="font-semibold text-slate-800 mb-3">训练损失曲线</h4>
+                        <div class="h-64"><canvas id="loss-chart"></canvas></div>
+                    </div>
+                    <div class="card bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                        <h4 class="font-semibold text-slate-800 mb-3">验证准确率曲线</h4>
+                        <div class="h-64"><canvas id="acc-chart"></canvas></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let useUpload = false;
+    let lossChart, accChart;
+
+    window.toggleDataSource = function(mode) {
+        useUpload = mode === 'upload';
+        document.getElementById('btn-default-data').className = mode === 'default'
+            ? 'flex-1 py-2 px-3 rounded-lg text-sm font-medium bg-blue-50 text-blue-700 border border-blue-200'
+            : 'flex-1 py-2 px-3 rounded-lg text-sm font-medium text-slate-600 border border-slate-300 hover:bg-slate-50';
+        document.getElementById('btn-upload-data').className = mode === 'upload'
+            ? 'flex-1 py-2 px-3 rounded-lg text-sm font-medium bg-blue-50 text-blue-700 border border-blue-200'
+            : 'flex-1 py-2 px-3 rounded-lg text-sm font-medium text-slate-600 border border-slate-300 hover:bg-slate-50';
+        document.getElementById('upload-area').classList.toggle('hidden', mode !== 'upload');
+    };
+
+    document.getElementById('train-btn').addEventListener('click', async function() {
+        const btn = this;
+        btn.disabled = true;
+        btn.innerHTML = '<div class="animate-spin-slow w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div> 训练中...';
+
+        document.getElementById('train-empty').classList.add('hidden');
+        document.getElementById('train-result').classList.add('hidden');
+        document.getElementById('train-progress').classList.remove('hidden');
+
+        const formData = new FormData();
+        formData.append('epochs', document.getElementById('epochs').value);
+        formData.append('batch_size', document.getElementById('batch-size').value);
+        if (useUpload) {
+            const file = document.getElementById('train-file').files[0];
+            if (file) formData.append('file', file);
+        }
+
+        try {
+            const resp = await fetch('/api/train', { method: 'POST', body: formData });
+            const data = await resp.json();
+
+            if (data.error) throw new Error(data.error);
+
+            document.getElementById('train-progress').classList.add('hidden');
+            document.getElementById('train-result').classList.remove('hidden');
+
+            // Metrics
+            document.getElementById('t-best-acc').textContent = data.best_acc.toFixed(2) + '%';
+            document.getElementById('t-loss').textContent = data.history.loss[data.history.loss.length - 1].toFixed(4);
+            document.getElementById('t-epochs').textContent = data.history.epochs.length;
+            document.getElementById('tm-acc').textContent = data.test_metrics.accuracy.toFixed(2) + '%';
+            document.getElementById('tm-prec').textContent = data.test_metrics.precision.toFixed(2) + '%';
+            document.getElementById('tm-recall').textContent = data.test_metrics.recall.toFixed(2) + '%';
+            document.getElementById('tm-f1').textContent = data.test_metrics.f1.toFixed(2) + '%';
+
+            // Charts
+            const epochs = data.history.epochs;
+            if (lossChart) lossChart.destroy();
+            if (accChart) accChart.destroy();
+
+            lossChart = new Chart(document.getElementById('loss-chart'), {
+                type: 'line',
+                data: {
+                    labels: epochs.map(e => 'Epoch ' + e),
+                    datasets: [{ label: 'Loss', data: data.history.loss, borderColor: '#dc2626', backgroundColor: 'rgba(220,38,38,0.1)', fill: true, tension: 0.3, pointRadius: 3 }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { x: { grid: { display: false } }, y: { grid: { color: '#f1f5f9' } } }
+                }
+            });
+
+            accChart = new Chart(document.getElementById('acc-chart'), {
+                type: 'line',
+                data: {
+                    labels: epochs.map(e => 'Epoch ' + e),
+                    datasets: [{ label: 'Accuracy', data: data.history.accuracy, borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.1)', fill: true, tension: 0.3, pointRadius: 3 }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { x: { grid: { display: false } }, y: { grid: { color: '#f1f5f9' }, min: 0, max: 100 } }
+                }
+            });
+
+        } catch (err) {
+            document.getElementById('train-progress').classList.add('hidden');
+            document.getElementById('train-empty').classList.remove('hidden');
+            document.querySelector('#train-empty h3').textContent = '训练失败';
+            document.querySelector('#train-empty p').textContent = err.message;
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="play" class="w-4 h-4"></i> 开始训练';
+            lucide.createIcons();
+        }
+    });
+
+    // Check model status
+    fetch('/api/model_status').then(r => r.json()).then(data => {
+        document.getElementById('status-text').textContent = data.model_loaded ? '模型已加载，系统就绪' : '模型未加载，处于规则降级模式';
+        document.getElementById('status-dot').className = data.model_loaded
+            ? 'w-2 h-2 bg-green-500 rounded-full pulse-dot'
+            : 'w-2 h-2 bg-yellow-500 rounded-full pulse-dot';
+    });
+
+    lucide.createIcons();
+</script>
+{% endblock %}

@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - 电商评论情感分析</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'sans-serif'],
+                    },
+                    colors: {
+                        blue: {
+                            50: '#e8f4fd', 100: '#bde0fc', 200: '#8dcaf8', 300: '#5db4f4',
+                            400: '#339def', 500: '#007AFF', 600: '#0066d6', 700: '#0055b3',
+                            800: '#004494', 900: '#003377',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        * { font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif; }
+        body {
+            background: #f5f5f7;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .login-wrapper {
+            width: 100%;
+            max-width: 420px;
+            padding: 24px;
+        }
+        .login-card {
+            background: #ffffff;
+            border-radius: 20px;
+            padding: 40px 36px 32px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 20px rgba(0,0,0,0.06);
+            border: 0.5px solid rgba(0,0,0,0.04);
+        }
+        .input-field {
+            width: 100%;
+            padding: 11px 14px;
+            border-radius: 10px;
+            border: 1px solid #d2d2d7;
+            background: #ffffff;
+            font-size: 14px;
+            color: #1d1d1f;
+            transition: all 0.2s ease;
+            outline: none;
+        }
+        .input-field:focus {
+            border-color: #007AFF;
+            box-shadow: 0 0 0 3px rgba(0,122,255,0.1);
+        }
+        .input-field::placeholder { color: #aeaeb2; }
+        .tab-btn {
+            flex: 1;
+            padding-bottom: 10px;
+            font-size: 14px;
+            font-weight: 500;
+            border-bottom: 2px solid transparent;
+            color: #aeaeb2;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            background: none;
+        }
+        .tab-btn.active {
+            color: #007AFF;
+            border-bottom-color: #007AFF;
+        }
+        .btn-login {
+            width: 100%;
+            padding: 12px;
+            background: #007AFF;
+            color: #fff;
+            font-size: 15px;
+            font-weight: 500;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .btn-login:hover {
+            background: #0066d6;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 16px rgba(0,122,255,0.3);
+        }
+        .btn-login:active { transform: scale(0.98); }
+        .btn-register {
+            width: 100%;
+            padding: 12px;
+            background: #34c759;
+            color: #fff;
+            font-size: 15px;
+            font-weight: 500;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .btn-register:hover {
+            background: #30b350;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 16px rgba(52,199,89,0.3);
+        }
+        .btn-register:active { transform: scale(0.98); }
+    </style>
+</head>
+<body>
+    <div class="login-wrapper">
+        <!-- Logo -->
+        <div class="text-center mb-8">
+            <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#007AFF] to-[#5856D6] flex items-center justify-center mx-auto mb-4 shadow-md shadow-[#007AFF]/20">
+                <i data-lucide="sparkles" class="w-8 h-8 text-white"></i>
+            </div>
+            <h1 class="text-[28px] font-bold text-[#1d1d1f] tracking-tight mb-1">电商评论情感分析</h1>
+            <p class="text-[#86868b] text-sm">电商评论 · 智能情感分析平台</p>
+        </div>
+
+        <!-- Card -->
+        <div class="login-card">
+            <!-- Tabs -->
+            <div class="flex mb-6">
+                <button class="tab-btn active" id="tab-login" onclick="switchTab('login')">登录</button>
+                <button class="tab-btn" id="tab-register" onclick="switchTab('register')">注册</button>
+            </div>
+
+            {% if error %}
+            <div class="mb-5 px-4 py-3 rounded-xl text-sm font-medium
+                {% if '成功' in error %}bg-[#34c759]/10 text-[#34c759] border border-[#34c759]/20
+                {% else %}bg-[#ff3b30]/8 text-[#ff3b30] border border-[#ff3b30]/15{% endif %}">
+                {{ error }}
+            </div>
+            {% endif %}
+
+            <!-- Login Form -->
+            <form id="login-form" method="POST" class="space-y-4">
+                <input type="hidden" name="action" value="login">
+                <div>
+                    <label class="block text-sm font-medium text-[#1d1d1f] mb-1.5">用户名</label>
+                    <input type="text" name="username" class="input-field" placeholder="请输入用户名" required>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-[#1d1d1f] mb-1.5">密码</label>
+                    <input type="password" name="password" class="input-field" placeholder="请输入密码" required>
+                </div>
+                <button type="submit" class="btn-login">登录系统</button>
+            </form>
+
+            <!-- Register Form -->
+            <form id="register-form" method="POST" class="space-y-4 hidden">
+                <input type="hidden" name="action" value="register">
+                <div>
+                    <label class="block text-sm font-medium text-[#1d1d1f] mb-1.5">设定用户名</label>
+                    <input type="text" name="username" class="input-field" placeholder="请设定用户名" required>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-[#1d1d1f] mb-1.5">设定密码</label>
+                    <input type="password" name="password" class="input-field" placeholder="请设定密码" required>
+                </div>
+                <button type="submit" class="btn-register">注册新用户</button>
+            </form>
+        </div>
+
+        <p class="text-center text-[#aeaeb2] text-xs mt-6">&copy; 2026 电商评论情感分析系统</p>
+    </div>
+
+    <script>
+        function switchTab(tab) {
+            document.getElementById('tab-login').classList.toggle('active', tab === 'login');
+            document.getElementById('tab-register').classList.toggle('active', tab === 'register');
+            document.getElementById('login-form').classList.toggle('hidden', tab !== 'login');
+            document.getElementById('register-form').classList.toggle('hidden', tab !== 'register');
+        }
+        lucide.createIcons();
+    </script>
+</body>
+</html>

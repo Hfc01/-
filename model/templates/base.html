@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}电商评论情感分析系统{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', '"SF Pro Display"', 'system-ui', 'sans-serif'],
+                    },
+                    colors: {
+                        blue: {
+                            50: '#e8f4fd', 100: '#bde0fc', 200: '#8dcaf8', 300: '#5db4f4',
+                            400: '#339def', 500: '#007AFF', 600: '#0066d6', 700: '#0055b3',
+                            800: '#004494', 900: '#003377',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        * { font-family: 'Inter', -apple-system, BlinkMacSystemFont, '"SF Pro Display"', system-ui, sans-serif; }
+        body { background-color: #f5f5f7; }
+        .sidebar {
+            width: 270px; min-height: 100vh;
+            background: rgba(250, 250, 252, 0.82);
+            backdrop-filter: blur(40px) saturate(180%);
+            -webkit-backdrop-filter: blur(40px) saturate(180%);
+            border-right: 0.5px solid rgba(0,0,0,0.06);
+            transition: width 0.3s cubic-bezier(0.25,0.1,0.25,1), transform 0.3s cubic-bezier(0.25,0.1,0.25,1);
+        }
+        .sidebar.collapsed { width: 72px; }
+        .sidebar.collapsed .nav-label, .sidebar.collapsed .nav-desc,
+        .sidebar.collapsed .brand-text, .sidebar.collapsed .model-info,
+        .sidebar.collapsed .user-info, .sidebar.collapsed .section-label { display: none; }
+        .sidebar.collapsed .nav-item { padding: 8px; }
+        .sidebar.collapsed .nav-item > div { justify-content: center; }
+        .main-content { margin-left: 270px; min-height: 100vh; transition: margin-left 0.3s cubic-bezier(0.25,0.1,0.25,1); }
+        .main-content.expanded { margin-left: 72px; }
+        .topbar {
+            position: sticky; top: 0; z-index: 20;
+            background: rgba(245, 245, 247, 0.72);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            border-bottom: 0.5px solid rgba(0,0,0,0.06);
+        }
+        .nav-item {
+            transition: all 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
+            border-radius: 10px; position: relative;
+        }
+        .nav-item:hover { background-color: rgba(0,0,0,0.03); }
+        .nav-item.active {
+            background-color: rgba(0,122,255,0.06);
+            box-shadow: inset 0 0 0 0.5px rgba(0,122,255,0.12);
+        }
+        .nav-item.active::before {
+            content: ''; position: absolute; left: -14px; top: 50%; transform: translateY(-50%);
+            width: 3px; height: 18px; background: #007AFF; border-radius: 0 99px 99px 0;
+        }
+        .card {
+            background: #ffffff; border-radius: 16px;
+            border: 0.5px solid rgba(0,0,0,0.06);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
+            transition: box-shadow 0.3s ease, transform 0.3s ease;
+        }
+        .card:hover {
+            box-shadow: 0 4px 16px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+            transform: translateY(-1px);
+        }
+        .stat-card {
+            background: #ffffff; border-radius: 14px; padding: 18px 20px;
+            border: 0.5px solid rgba(0,0,0,0.05);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+            transition: box-shadow 0.25s ease;
+        }
+        .stat-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+        .btn-primary {
+            background: #007AFF; color: #fff; font-weight: 500;
+            border-radius: 10px; transition: all 0.2s cubic-bezier(0.25,0.1,0.25,1);
+        }
+        .btn-primary:hover {
+            background: #0066d6; transform: translateY(-1px);
+            box-shadow: 0 4px 16px rgba(0,122,255,0.35);
+        }
+        .btn-primary:active { transform: scale(0.98); }
+        .btn-primary:disabled {
+            background: #a1a1a6; color: #ffffff88;
+            box-shadow: none; transform: none; cursor: not-allowed;
+        }
+        .user-menu-btn:hover .user-chevron { transform: rotate(180deg); }
+        .user-chevron { transition: transform 0.2s ease; }
+        .pulse-ring {
+            animation: pulse-ring 2s cubic-bezier(0.25,0,0.75,1) infinite;
+        }
+        @keyframes pulse-ring {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(0,122,255,0.4); }
+            50% { box-shadow: 0 0 0 6px rgba(0,122,255,0); }
+        }
+        .animate-spin-slow { animation: spin 2s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .fade-in { animation: fadeIn 0.4s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .dropdown { animation: dropdownIn 0.15s ease; }
+        @keyframes dropdownIn { from { opacity: 0; transform: translateY(-8px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
+    </style>
+    {% block head %}{% endblock %}
+</head>
+<body class="flex">
+
+    <!-- =========================== Sidebar =========================== -->
+    <aside id="sidebar" class="sidebar fixed left-0 top-0 flex flex-col z-30 select-none">
+        <!-- Logo -->
+        <div class="px-5 pt-6 pb-3 flex items-center justify-between">
+            <a href="/batch" class="flex items-center gap-3.5 group">
+                <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#007AFF] to-[#5856D6] flex items-center justify-center shadow-md shadow-[#007AFF]/20 flex-shrink-0">
+                    <i data-lucide="sparkles" class="w-5 h-5 text-white"></i>
+                </div>
+                <div class="brand-text">
+                    <h1 class="text-[#1d1d1f] font-semibold text-base tracking-tight">电商评论情感分析</h1>
+                    <p class="text-[#86868b] text-xs font-medium">情感分析引擎</p>
+                </div>
+            </a>
+            <button onclick="toggleSidebar()" class="w-7 h-7 rounded-lg flex items-center justify-center text-[#aeaeb2] hover:text-[#1d1d1f] hover:bg-black/[0.04] transition-all flex-shrink-0" title="折叠侧边栏">
+                <i data-lucide="panel-left-close" class="w-4 h-4" id="sidebar-toggle-icon"></i>
+            </button>
+        </div>
+
+        <!-- 分隔线 -->
+        <div class="mx-5 h-px bg-gradient-to-r from-transparent via-black/[0.06] to-transparent"></div>
+
+        <!-- 导航 -->
+        <nav class="relative flex-1 py-5 px-4 space-y-2 overflow-y-auto">
+            <p class="section-label px-3 text-[10px] font-semibold text-[#aeaeb2] uppercase tracking-[0.15em] mb-3">功能导航</p>
+
+            <a href="/batch" class="nav-item {{ 'active' if request.path == '/batch' else '' }} block px-4 py-3">
+                <div class="flex items-center gap-3.5">
+                    <div class="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 flex-shrink-0
+                        {{ 'bg-[#007AFF] text-white shadow-md shadow-[#007AFF]/25' if request.path == '/batch' else 'bg-black/[0.04] text-[#86868b] group-hover:bg-black/[0.06] group-hover:text-[#1d1d1f]' }}">
+                        <i data-lucide="upload" class="w-[20px] h-[20px]"></i>
+                    </div>
+                    <div class="flex-1 min-w-0 nav-label">
+                        <p class="text-[14px] font-semibold {{ 'text-[#007AFF]' if request.path == '/batch' else 'text-[#1d1d1f]/80 group-hover:text-[#1d1d1f]' }} leading-tight">批量挖掘</p>
+                        <p class="nav-desc text-[11px] {{ 'text-[#007AFF]/55' if request.path == '/batch' else 'text-[#aeaeb2] group-hover:text-[#86868b]' }} leading-tight mt-0.5">上传 CSV · 分析情感分布</p>
+                    </div>
+                    {% if request.path == '/batch' %}<span class="w-2 h-2 rounded-full bg-[#007AFF] flex-shrink-0"></span>{% endif %}
+                </div>
+            </a>
+
+            <a href="/dashboard" class="nav-item {{ 'active' if request.path == '/dashboard' else '' }} block px-4 py-3">
+                <div class="flex items-center gap-3.5">
+                    <div class="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 flex-shrink-0
+                        {{ 'bg-[#007AFF] text-white shadow-md shadow-[#007AFF]/25' if request.path == '/dashboard' else 'bg-black/[0.04] text-[#86868b] group-hover:bg-black/[0.06] group-hover:text-[#1d1d1f]' }}">
+                        <i data-lucide="bar-chart-3" class="w-[20px] h-[20px]"></i>
+                    </div>
+                    <div class="flex-1 min-w-0 nav-label">
+                        <p class="text-[14px] font-semibold {{ 'text-[#007AFF]' if request.path == '/dashboard' else 'text-[#1d1d1f]/80 group-hover:text-[#1d1d1f]' }} leading-tight">监控大屏</p>
+                        <p class="nav-desc text-[11px] {{ 'text-[#007AFF]/55' if request.path == '/dashboard' else 'text-[#aeaeb2] group-hover:text-[#86868b]' }} leading-tight mt-0.5">词云 · 多维度可视化</p>
+                    </div>
+                    {% if request.path == '/dashboard' %}<span class="w-2 h-2 rounded-full bg-[#007AFF] flex-shrink-0"></span>{% endif %}
+                </div>
+            </a>
+
+            <a href="/diagnose" class="nav-item {{ 'active' if request.path == '/diagnose' else '' }} block px-4 py-3">
+                <div class="flex items-center gap-3.5">
+                    <div class="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 flex-shrink-0
+                        {{ 'bg-[#007AFF] text-white shadow-md shadow-[#007AFF]/25' if request.path == '/diagnose' else 'bg-black/[0.04] text-[#86868b] group-hover:bg-black/[0.06] group-hover:text-[#1d1d1f]' }}">
+                        <i data-lucide="search" class="w-[20px] h-[20px]"></i>
+                    </div>
+                    <div class="flex-1 min-w-0 nav-label">
+                        <p class="text-[14px] font-semibold {{ 'text-[#007AFF]' if request.path == '/diagnose' else 'text-[#1d1d1f]/80 group-hover:text-[#1d1d1f]' }} leading-tight">单条诊断</p>
+                        <p class="nav-desc text-[11px] {{ 'text-[#007AFF]/55' if request.path == '/diagnose' else 'text-[#aeaeb2] group-hover:text-[#86868b]' }} leading-tight mt-0.5">输入文本 · 即时判分</p>
+                    </div>
+                    {% if request.path == '/diagnose' %}<span class="w-2 h-2 rounded-full bg-[#007AFF] flex-shrink-0"></span>{% endif %}
+                </div>
+            </a>
+
+            <a href="/train" class="nav-item {{ 'active' if request.path == '/train' else '' }} block px-4 py-3">
+                <div class="flex items-center gap-3.5">
+                    <div class="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 flex-shrink-0
+                        {{ 'bg-[#007AFF] text-white shadow-md shadow-[#007AFF]/25' if request.path == '/train' else 'bg-black/[0.04] text-[#86868b] group-hover:bg-black/[0.06] group-hover:text-[#1d1d1f]' }}">
+                        <i data-lucide="cpu" class="w-[20px] h-[20px]"></i>
+                    </div>
+                    <div class="flex-1 min-w-0 nav-label">
+                        <p class="text-[14px] font-semibold {{ 'text-[#007AFF]' if request.path == '/train' else 'text-[#1d1d1f]/80 group-hover:text-[#1d1d1f]' }} leading-tight">模型训练</p>
+                        <p class="nav-desc text-[11px] {{ 'text-[#007AFF]/55' if request.path == '/train' else 'text-[#aeaeb2] group-hover:text-[#86868b]' }} leading-tight mt-0.5">LSTM · 调节超参数</p>
+                    </div>
+                    {% if request.path == '/train' %}<span class="w-2 h-2 rounded-full bg-[#007AFF] flex-shrink-0"></span>{% endif %}
+                </div>
+            </a>
+
+            <!-- 分隔 -->
+            <div class="py-2 px-1">
+                <div class="h-px bg-gradient-to-r from-transparent via-black/[0.05] to-transparent"></div>
+            </div>
+
+            <!-- 系统概览卡片 -->
+            <div class="px-1 space-y-2 nav-label">
+                <p class="section-label px-2 text-[10px] font-semibold text-[#aeaeb2] uppercase tracking-[0.15em]">系统概览</p>
+                <div class="bg-[#007AFF]/[0.04] rounded-xl px-4 py-3.5 border border-[#007AFF]/[0.08]">
+                    <div class="flex items-center gap-3 mb-3">
+                        <div class="w-8 h-8 rounded-xl bg-[#007AFF]/10 flex items-center justify-center">
+                            <i data-lucide="activity" class="w-4 h-4 text-[#007AFF]"></i>
+                        </div>
+                        <div>
+                            <p class="text-[18px] font-bold text-[#1d1d1f] leading-none" id="stat-analyzed">--</p>
+                            <p class="text-[10px] text-[#86868b] leading-tight">已分析评论</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                            <i data-lucide="target" class="w-4 h-4 text-emerald-600"></i>
+                        </div>
+                        <div>
+                            <p class="text-[18px] font-bold text-[#1d1d1f] leading-none" id="stat-accuracy">--</p>
+                            <p class="text-[10px] text-[#86868b] leading-tight">模型基准精度</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <!-- 底部: 模型状态 + 用户 -->
+        <div class="px-4 pb-5 space-y-2.5 pt-2 border-t border-black/[0.04]">
+            <div class="flex items-center gap-3 px-3 py-3 rounded-xl bg-emerald-50/50 border border-emerald-100/50">
+                <div class="relative flex-shrink-0">
+                    <div class="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.4)]"></div>
+                    <div class="absolute inset-0 w-3 h-3 rounded-full bg-emerald-500 pulse-ring"></div>
+                </div>
+                <div class="model-info">
+                    <p class="text-[13px] font-semibold text-emerald-700/80 leading-tight">模型运行中</p>
+                    <p class="text-[11px] text-emerald-600/50 leading-tight">LSTM · 128D Hidden</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3 px-3 py-2.5">
+                <div class="w-9 h-9 rounded-full bg-gradient-to-br from-[#007AFF]/20 to-[#5856D6]/20 flex items-center justify-center flex-shrink-0">
+                    <span class="text-xs font-bold text-[#007AFF]">{{ user[:1].upper() if user else 'A' }}</span>
+                </div>
+                <div class="flex-1 min-w-0 user-info">
+                    <p class="text-[13px] font-medium text-[#1d1d1f]/65 truncate">{{ user or 'Admin' }}</p>
+                    <p class="text-[11px] text-[#aeaeb2]">系统操作员</p>
+                </div>
+                <a href="/logout" class="w-8 h-8 rounded-lg flex items-center justify-center text-[#aeaeb2] hover:text-red-500 hover:bg-red-50 transition-all flex-shrink-0" title="退出登录">
+                    <i data-lucide="log-out" class="w-4 h-4"></i>
+                </a>
+            </div>
+        </div>
+    </aside>
+
+    <!-- =========================== Main =========================== -->
+    <main id="main-content" class="main-content flex-1 flex flex-col min-h-screen">
+
+        <!-- ===== Top Bar ===== -->
+        <header class="topbar px-6 lg:px-8 py-3.5 flex items-center justify-between gap-4">
+            <!-- 左侧: 面包屑 -->
+            <div class="flex items-center gap-3 min-w-0">
+                <button onclick="toggleSidebar()" class="w-8 h-8 rounded-lg flex items-center justify-center text-[#aeaeb2] hover:text-[#1d1d1f] hover:bg-black/[0.04] transition-all lg:hidden" title="菜单">
+                    <i data-lucide="menu" class="w-5 h-5"></i>
+                </button>
+                <nav class="flex items-center gap-1.5 text-sm min-w-0">
+                    <a href="/batch" class="text-[#86868b] hover:text-[#007AFF] transition-colors flex items-center gap-1 flex-shrink-0">
+                        <i data-lucide="home" class="w-3.5 h-3.5"></i>
+                    </a>
+                    <span class="text-[#d2d2d7] flex-shrink-0">/</span>
+                    <span class="text-[#1d1d1f] font-medium truncate">{% block breadcrumb %}{% endblock %}</span>
+                </nav>
+            </div>
+
+            <!-- 右侧: 快捷操作 + 用户 -->
+            <div class="flex items-center gap-2 flex-shrink-0">
+                <!-- 模型状态 -->
+                <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-100 text-xs font-medium text-emerald-700">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                    模型在线
+                </div>
+
+                <!-- 用户菜单 -->
+                <div class="relative">
+                    <button onclick="toggleUserMenu()" class="user-menu-btn flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-black/[0.03] transition-all">
+                        <div class="w-7 h-7 rounded-full bg-gradient-to-br from-[#007AFF]/20 to-[#5856D6]/20 flex items-center justify-center">
+                            <span class="text-[11px] font-semibold text-[#007AFF]">{{ user[:1].upper() if user else 'A' }}</span>
+                        </div>
+                        <span class="hidden sm:block text-sm font-medium text-[#1d1d1f]/70">{{ user or 'Admin' }}</span>
+                        <i data-lucide="chevron-down" class="user-chevron w-3.5 h-3.5 text-[#aeaeb2] hidden sm:block"></i>
+                    </button>
+                    <div id="user-menu" class="dropdown hidden absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-lg border border-black/[0.06] py-1.5 overflow-hidden z-50">
+                        <div class="px-4 py-2.5 border-b border-black/[0.04]">
+                            <p class="text-sm font-medium text-[#1d1d1f]">{{ user or 'Admin' }}</p>
+                            <p class="text-xs text-[#aeaeb2]">操作员</p>
+                        </div>
+                        <a href="/logout" class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-[#ff3b30] hover:bg-red-50 transition-colors">
+                            <i data-lucide="log-out" class="w-4 h-4"></i>
+                            退出登录
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- ===== Page Content ===== -->
+        <div class="flex-1">
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+
+    <script>
+        // 侧边栏折叠
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const main = document.getElementById('main-content');
+            const icon = document.getElementById('sidebar-toggle-icon');
+            const collapsed = sidebar.classList.toggle('collapsed');
+            main.classList.toggle('expanded');
+            if (collapsed) {
+                icon.setAttribute('data-lucide', 'panel-left-open');
+            } else {
+                icon.setAttribute('data-lucide', 'panel-left-close');
+            }
+            lucide.createIcons();
+        }
+
+        // 用户菜单
+        function toggleUserMenu() {
+            const menu = document.getElementById('user-menu');
+            menu.classList.toggle('hidden');
+        }
+        document.addEventListener('click', function(e) {
+            const menu = document.getElementById('user-menu');
+            if (!menu.classList.contains('hidden') && !e.target.closest('.user-menu-btn') && !e.target.closest('#user-menu')) {
+                menu.classList.add('hidden');
+            }
+        });
+
+        // 侧边栏系统概览统计
+        (function loadSidebarStats() {
+            // 已分析评论数 — 从 sessionStorage 读取（由批量挖掘页写入）
+            const analyzedCount = sessionStorage.getItem('analyzedCount');
+            if (analyzedCount) {
+                document.getElementById('stat-analyzed').textContent = Number(analyzedCount).toLocaleString();
+            } else {
+                document.getElementById('stat-analyzed').textContent = '0';
+            }
+            // 模型基准精度 — 异步获取
+            fetch('/api/model_status')
+                .then(r => r.json())
+                .then(data => {
+                    const accEl = document.getElementById('stat-accuracy');
+                    if (data.model_loaded && data.accuracy) {
+                        accEl.textContent = data.accuracy.toFixed(1) + '%';
+                    } else if (data.model_loaded) {
+                        accEl.textContent = '就绪';
+                    } else {
+                        accEl.textContent = '未加载';
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('stat-accuracy').textContent = '--';
+                });
+        })();
+
+        lucide.createIcons();
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

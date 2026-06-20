@@ -1,0 +1,379 @@
+{% extends "base.html" %}
+{% block title %}批量挖掘 - 电商评论情感分析{% endblock %}
+{% block breadcrumb %}批量挖掘{% endblock %}
+
+{% block content %}
+<div class="p-6 lg:p-8">
+    <!-- Header -->
+    <div class="mb-6">
+        <h2 class="text-2xl font-bold text-slate-800">数据批量导入与挖掘</h2>
+        <p class="text-slate-500 text-sm mt-1">上传 CSV 数据，一键启动全量情感分析</p>
+    </div>
+
+    <!-- Upload Card -->
+    <div class="card bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
+        <div class="flex items-center gap-3 mb-5">
+            <div class="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
+                <i data-lucide="file-up" class="w-5 h-5 text-blue-600"></i>
+            </div>
+            <div>
+                <h3 class="font-semibold text-slate-800">数据源选择</h3>
+                <p class="text-xs text-slate-500">上传 CSV 文件，或使用系统预设数据集</p>
+            </div>
+        </div>
+
+        <!-- 数据源切换 -->
+        <div class="flex gap-2 mb-4">
+            <button id="tab-upload" class="data-source-tab px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white">本地上传文件</button>
+            <button id="tab-demo" class="data-source-tab px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-600 hover:bg-slate-200">预设数据集</button>
+        </div>
+
+        <!-- 本地上传区域 -->
+        <div id="upload-area" class="flex flex-wrap items-end gap-4 mb-4">
+            <div class="flex-1 min-w-[260px]">
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">选择 CSV 文件</label>
+                <input type="file" id="csv-file" accept=".csv" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+            </div>
+        </div>
+
+        <!-- 预设数据集区域 -->
+        <div id="demo-area" class="hidden mb-4">
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center">
+                            <i data-lucide="database" class="w-5 h-5 text-blue-600"></i>
+                        </div>
+                        <div>
+                            <p class="font-medium text-slate-800 text-sm">ChnSentiCorp_htl_all.csv</p>
+                            <p class="text-xs text-slate-500" id="demo-desc">酒店评论情感数据集 · 随机采样 500 条</p>
+                        </div>
+                    </div>
+                    <button id="load-demo" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors">
+                        <i data-lucide="download" class="w-4 h-4"></i>
+                        加载数据集
+                    </button>
+                </div>
+                <div id="demo-loaded-msg" class="hidden mt-3 text-sm text-green-600 flex items-center gap-1.5">
+                    <i data-lucide="check-circle" class="w-4 h-4"></i>
+                    <span id="demo-msg-text"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 全局操作栏 -->
+        <div class="flex flex-wrap items-end gap-4 pt-2 border-t border-slate-100">
+            <div class="w-48">
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">业务领域</label>
+                <select id="domain-select" class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none bg-white">
+                    <option value="电商通用">电商通用</option>
+                    <option value="外卖餐饮">外卖餐饮</option>
+                    <option value="酒店住宿">酒店住宿</option>
+                    <option value="汽车出行">汽车出行</option>
+                </select>
+            </div>
+            <div class="flex items-end">
+                <button id="start-analysis" class="btn-primary bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shadow-blue-200" disabled>
+                    <i data-lucide="play" class="w-4 h-4"></i>
+                    启动全量深度分析
+                </button>
+            </div>
+            <p class="text-xs text-slate-400 self-end mb-2" id="analyze-hint">请先上传文件或加载预设数据集</p>
+        </div>
+
+        <!-- Progress -->
+        <div id="progress-area" class="hidden">
+            <div class="flex items-center gap-3 mb-2">
+                <div class="animate-spin-slow w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                <span class="text-sm text-slate-600" id="progress-text">正在分析中...</span>
+            </div>
+            <div class="w-full bg-slate-100 rounded-full h-2">
+                <div id="progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preview -->
+    <div id="preview-area" class="hidden">
+        <div class="card bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
+            <h3 class="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                <i data-lucide="eye" class="w-4 h-4 text-slate-500"></i> 数据预览
+            </h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm" id="preview-table">
+                    <thead class="bg-slate-50 text-slate-600"></thead>
+                    <tbody class="divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
+            <p class="text-xs text-slate-500 mt-3" id="preview-info"></p>
+        </div>
+    </div>
+
+    <!-- Results -->
+    <div id="result-area" class="hidden">
+        <div class="card bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="font-semibold text-slate-800 flex items-center gap-2">
+                    <i data-lucide="check-circle" class="w-4 h-4 text-green-500"></i> 分析结果
+                </h3>
+                <div class="flex gap-2">
+                    <button id="export-csv" class="text-sm px-4 py-1.5 border border-slate-300 rounded-lg hover:bg-slate-50 flex items-center gap-1.5">
+                        <i data-lucide="download" class="w-3.5 h-3.5"></i> 导出 CSV
+                    </button>
+                    <a href="/dashboard" class="text-sm px-4 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1.5">
+                        <i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i> 查看大屏
+                    </a>
+                </div>
+            </div>
+
+            <!-- Summary Cards -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="bg-slate-50 rounded-lg p-4">
+                    <p class="text-xs text-slate-500 mb-1">总处理评论数</p>
+                    <p class="text-2xl font-bold text-slate-800" id="result-total">-</p>
+                </div>
+                <div class="bg-green-50 rounded-lg p-4">
+                    <p class="text-xs text-green-600 mb-1">好评数</p>
+                    <p class="text-2xl font-bold text-green-700" id="result-pos">-</p>
+                </div>
+                <div class="bg-red-50 rounded-lg p-4">
+                    <p class="text-xs text-red-600 mb-1">差评数</p>
+                    <p class="text-2xl font-bold text-red-700" id="result-neg">-</p>
+                </div>
+                <div class="bg-blue-50 rounded-lg p-4">
+                    <p class="text-xs text-blue-600 mb-1">好评率</p>
+                    <p class="text-2xl font-bold text-blue-700" id="result-rate">-</p>
+                </div>
+            </div>
+
+            <!-- Detail Table -->
+            <div class="overflow-x-auto max-h-80">
+                <table class="w-full text-sm" id="result-table">
+                    <thead class="bg-slate-50 text-slate-600 sticky top-0">
+                        <tr>
+                            <th class="px-4 py-2.5 text-left font-medium">#</th>
+                            <th class="px-4 py-2.5 text-left font-medium">评论文本</th>
+                            <th class="px-4 py-2.5 text-left font-medium">预测结果</th>
+                            <th class="px-4 py-2.5 text-left font-medium">置信度</th>
+                            <th class="px-4 py-2.5 text-left font-medium">涉及维度</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let analyzedData = null;
+    let dataSource = 'upload'; // 'upload' or 'demo'
+    let demoLoaded = false;
+
+    // ---- 数据源切换 ----
+    document.getElementById('tab-upload').addEventListener('click', function() {
+        dataSource = 'upload';
+        this.className = 'data-source-tab px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white';
+        document.getElementById('tab-demo').className = 'data-source-tab px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-600 hover:bg-slate-200';
+        document.getElementById('upload-area').classList.remove('hidden');
+        document.getElementById('demo-area').classList.add('hidden');
+        updateAnalyzeButton();
+    });
+
+    document.getElementById('tab-demo').addEventListener('click', function() {
+        dataSource = 'demo';
+        this.className = 'data-source-tab px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white';
+        document.getElementById('tab-upload').className = 'data-source-tab px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-600 hover:bg-slate-200';
+        document.getElementById('upload-area').classList.add('hidden');
+        document.getElementById('demo-area').classList.remove('hidden');
+        updateAnalyzeButton();
+    });
+
+    // ---- 加载预设数据集 ----
+    document.getElementById('load-demo').addEventListener('click', async function() {
+        const btn = this;
+        btn.disabled = true;
+        btn.innerHTML = '<div class="animate-spin-slow w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div> 加载中...';
+
+        try {
+            const resp = await fetch('/api/load_demo', { method: 'POST' });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error || '加载失败');
+
+            demoLoaded = true;
+            document.getElementById('demo-loaded-msg').classList.remove('hidden');
+            document.getElementById('demo-msg-text').textContent = data.message;
+
+            // 展示预览
+            const thead = document.querySelector('#preview-table thead');
+            thead.innerHTML = '<tr>' + data.preview_cols.map(h => `<th class="px-4 py-2.5 text-left font-medium">${h}</th>`).join('') + '</tr>';
+            const tbody = document.querySelector('#preview-table tbody');
+            tbody.innerHTML = data.preview.map(row =>
+                '<tr>' + data.preview_cols.map(c => `<td class="px-4 py-2.5 text-slate-700 truncate max-w-[200px]">${String(row[c] || '').slice(0, 60)}</td>`).join('') + '</tr>'
+            ).join('');
+            document.getElementById('preview-info').textContent = `分析对象列: ${data.text_col} · 共 ${data.total_rows} 条数据`;
+            document.getElementById('preview-area').classList.remove('hidden');
+            updateAnalyzeButton();
+
+            // 更新按钮样式
+            btn.innerHTML = '<i data-lucide="refresh-cw" class="w-4 h-4"></i> 重新加载';
+            btn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+            btn.classList.add('bg-green-600', 'hover:bg-green-700');
+
+        } catch (err) {
+            alert('加载失败: ' + err.message);
+            btn.innerHTML = '<i data-lucide="download" class="w-4 h-4"></i> 加载数据集';
+        } finally {
+            btn.disabled = false;
+            lucide.createIcons();
+        }
+    });
+
+    function updateAnalyzeButton() {
+        const btn = document.getElementById('start-analysis');
+        const hint = document.getElementById('analyze-hint');
+        if (dataSource === 'upload') {
+            const hasFile = document.getElementById('csv-file').files.length > 0;
+            btn.disabled = !hasFile;
+            hint.textContent = hasFile ? '已选择文件，点击开始分析' : '请先上传文件或加载预设数据集';
+        } else {
+            btn.disabled = !demoLoaded;
+            hint.textContent = demoLoaded ? '预设数据已就绪，点击开始分析' : '请点击「加载数据集」载入预设数据';
+        }
+    }
+
+    document.getElementById('csv-file').addEventListener('change', function(e) {
+        updateAnalyzeButton();
+        if (e.target.files.length) {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                const lines = ev.target.result.split('\n').slice(0, 6);
+                const headers = lines[0].split(',');
+                const thead = document.querySelector('#preview-table thead');
+                thead.innerHTML = '<tr>' + headers.map(h => `<th class="px-4 py-2.5 text-left font-medium">${h.trim()}</th>`).join('') + '</tr>';
+                const tbody = document.querySelector('#preview-table tbody');
+                tbody.innerHTML = lines.slice(1).filter(l => l.trim()).map(l => {
+                    const cells = l.split(',');
+                    return '<tr>' + cells.slice(0, headers.length).map(c => `<td class="px-4 py-2.5 text-slate-700 truncate max-w-[200px]">${c.trim()}</td>`).join('') + '</tr>';
+                }).join('');
+                document.getElementById('preview-info').textContent = `共 ${lines.length - 2} 行数据 (预览前5行)`;
+                document.getElementById('preview-area').classList.remove('hidden');
+            };
+            reader.readAsText(file);
+        }
+    });
+
+    document.getElementById('start-analysis').addEventListener('click', async function() {
+        const btn = this;
+        btn.disabled = true;
+        btn.innerHTML = '<div class="animate-spin-slow w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div> 分析中...';
+
+        const progressArea = document.getElementById('progress-area');
+        const progressBar = document.getElementById('progress-bar');
+        const progressText = document.getElementById('progress-text');
+        progressArea.classList.remove('hidden');
+        progressBar.style.width = '20%';
+        progressText.textContent = '正在准备数据...';
+
+        try {
+            let resp;
+            const domain = document.getElementById('domain-select').value;
+
+            if (dataSource === 'upload') {
+                const fileInput = document.getElementById('csv-file');
+                const file = fileInput.files[0];
+                if (!file) throw new Error('请选择文件');
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('domain', domain);
+                progressBar.style.width = '40%';
+                progressText.textContent = '神经网络执行分析中...';
+                resp = await fetch('/api/analyze', { method: 'POST', body: formData });
+            } else {
+                const formData = new FormData();
+                formData.append('domain', domain);
+                progressBar.style.width = '40%';
+                progressText.textContent = '神经网络执行分析中...';
+                resp = await fetch('/api/analyze_demo', { method: 'POST', body: formData });
+            }
+
+            progressBar.style.width = '80%';
+
+            if (!resp.ok) {
+                const err = await resp.json();
+                throw new Error(err.error || '分析失败');
+            }
+
+            const data = await resp.json();
+            progressBar.style.width = '100%';
+            progressText.textContent = '分析完成！';
+            analyzedData = data;
+
+            // Show results
+            document.getElementById('result-total').textContent = data.total.toLocaleString();
+            document.getElementById('result-pos').textContent = data.pos_count.toLocaleString();
+            document.getElementById('result-neg').textContent = data.neg_count.toLocaleString();
+            document.getElementById('result-rate').textContent = data.pos_rate + '%';
+
+            // Detail table
+            const tbody = document.querySelector('#result-table tbody');
+            tbody.innerHTML = data.data.slice(0, 20).map((row, i) => {
+                const label = data.labels[i];
+                const conf = data.confidences[i];
+                const aspect = data.detail_aspects[i];
+                const labelClass = label === '好评' ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50';
+                return `<tr>
+                    <td class="px-4 py-2.5 text-slate-400">${i + 1}</td>
+                    <td class="px-4 py-2.5 text-slate-700 truncate max-w-[300px]">${String(row[data.text_col] || '').slice(0, 80)}</td>
+                    <td class="px-4 py-2.5"><span class="px-2 py-0.5 rounded text-xs font-medium ${labelClass}">${label}</span></td>
+                    <td class="px-4 py-2.5 text-slate-600">${(conf * 100).toFixed(1)}%</td>
+                    <td class="px-4 py-2.5 text-slate-600 text-xs">${aspect}</td>
+                </tr>`;
+            }).join('');
+
+            document.getElementById('result-area').classList.remove('hidden');
+            setTimeout(() => progressArea.classList.add('hidden'), 1500);
+
+            // Store data for dashboard
+            sessionStorage.setItem('analyzedCount', data.total);
+            sessionStorage.setItem('dashboardData', JSON.stringify({
+                total: data.total, pos_count: data.pos_count, neg_count: data.neg_count,
+                pos_rate: data.pos_rate, aspects: data.aspects, cross_data: data.cross_data,
+                pos_wordcloud: data.pos_wordcloud, neg_wordcloud: data.neg_wordcloud,
+                saa_report: data.saa_report || null
+            }));
+
+        } catch (err) {
+            progressText.textContent = '错误: ' + err.message;
+            progressBar.classList.add('bg-red-500');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="play" class="w-4 h-4"></i> 启动全量深度分析';
+            lucide.createIcons();
+        }
+    });
+
+    document.getElementById('export-csv').addEventListener('click', function() {
+        if (!analyzedData) return;
+        let csv = analyzedData.columns.join(',') + ',预测结果,置信度,涉及维度\n';
+        analyzedData.data.forEach((row, i) => {
+            const vals = analyzedData.columns.map(c => {
+                const v = String(row[c] || '').replace(/"/g, '""');
+                return v.includes(',') ? `"${v}"` : v;
+            });
+            vals.push(analyzedData.labels[i], analyzedData.confidences[i], analyzedData.detail_aspects[i]);
+            csv += vals.join(',') + '\n';
+        });
+        const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'sentiment_result.csv'; a.click();
+        URL.revokeObjectURL(url);
+    });
+
+    lucide.createIcons();
+</script>
+{% endblock %}

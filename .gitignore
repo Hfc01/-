@@ -45,8 +45,19 @@ dist/
 *.tmp
 *.temp
 
+# Temporary files
+*.tmp
+*.temp
+
 # Streamlit
 .streamlit/
+
+# SAA
+saa_result.json
+api_test.json
+
+# Project
+备份/
 
 # Misc
 CNAME
